@@ -10,6 +10,7 @@ int wmain()
   P(sizeof(HANDLE));
   P(sizeof(STARTUPINFOW));
   P(offsetof(STARTUPINFOW, dwFlags));
+  P(offsetof(STARTUPINFOW, wShowWindow));
   P(offsetof(STARTUPINFOW, hStdInput));
   P(offsetof(STARTUPINFOW, hStdOutput));
   P(offsetof(STARTUPINFOW, hStdError));
@@ -20,6 +21,8 @@ int wmain()
   P(CREATE_SUSPENDED);
   P(CREATE_UNICODE_ENVIRONMENT);
   P(STARTF_USESTDHANDLES);
+  P(STARTF_USESHOWWINDOW);
+  P(SW_HIDE);
   P(HANDLE_FLAG_INHERIT);
   P(INFINITE);
   P(WAIT_TIMEOUT);
@@ -40,11 +43,14 @@ int wmain()
   P(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE);
 
   static_assert(sizeof(STARTUPINFOW) == 104, "STARTUPINFOW size");
+  static_assert(offsetof(STARTUPINFOW, wShowWindow) == 64, "show window offset");
   static_assert(sizeof(PROCESS_INFORMATION) == 24, "PROCESS_INFORMATION size");
   static_assert(sizeof(HANDLE) == 8, "HANDLE size");
   static_assert(CREATE_SUSPENDED == 0x4, "suspended process flag");
   static_assert(CREATE_UNICODE_ENVIRONMENT == 0x400, "Unicode environment flag");
   static_assert(STARTF_USESTDHANDLES == 0x100, "std handles flag");
+  static_assert(STARTF_USESHOWWINDOW == 0x1, "show window flag");
+  static_assert(SW_HIDE == 0, "hide command");
   static_assert(HANDLE_FLAG_INHERIT == 0x1, "inherit flag");
   static_assert(WAIT_TIMEOUT == 258, "zero-time wait timeout");
   static_assert(sizeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION) == 48, "job accounting size");
