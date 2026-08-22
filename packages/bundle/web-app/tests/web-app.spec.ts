@@ -377,6 +377,7 @@ describe('web-app runtime glue', () => {
     expect(options?.env).not.toHaveProperty('DSH_HOME')
     expect(options?.env?.PATH).toBe(process.env.PATH)
     expect(options?.stdio).toEqual(['ignore', 'inherit', 'pipe'])
+    expect(options?.windowsHide).toBe(true)
     completed.emit('close', 0)
     await expect(completion).resolves.toBeUndefined()
     expect(completed.listenerCount('error')).toBe(0)

@@ -6,8 +6,8 @@ import {
   spawnInheritedJobProcess,
   spawnPipedProcess,
 } from '../src/index.ts'
-import { CREATE_SUSPENDED } from '../src/abi.ts'
-import { PROCESS_INFORMATION } from '../src/ffi.ts'
+import { CREATE_SUSPENDED, STARTF_USESHOWWINDOW, STARTF_USESTDHANDLES } from '../src/abi.ts'
+import { PROCESS_INFORMATION, STARTUPINFOW } from '../src/ffi.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/index.ts'
 
 const PVOID = koffi.pointer('void')
@@ -15,15 +15,20 @@ const PVOID = koffi.pointer('void')
 function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
   api: Win32ProcessBindings
   events: string[]
+  startupInfos: Array<Record<string, unknown>>
   createProcessAsUserW: ReturnType<typeof vi.fn>
   assignProcessToJobObject: ReturnType<typeof vi.fn>
   resumeThread: ReturnType<typeof vi.fn>
 } {
   const events: string[] = []
+  const startupInfos: Array<Record<string, unknown>> = []
   const createProcessAsUserWImpl: Win32ProcessBindings['createProcessAsUserW'] =
     overrides.createProcessAsUserW
-    ?? ((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
+    ?? ((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, startup, info) => {
       events.push('create')
+      // The spawn frees STARTUPINFOW when the call returns, so copy it while the
+      // pointer is live.
+      startupInfos.push(koffi.decode(startup, STARTUPINFOW) as Record<string, unknown>)
       koffi.encode(info, PROCESS_INFORMATION, {
         hProcess: 60n,
         hThread: 61n,
@@ -61,6 +66,7 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
   return {
     api,
     events,
+    startupInfos,
     createProcessAsUserW,
     assignProcessToJobObject,
     resumeThread,
@@ -74,6 +80,7 @@ describe('spawnInheritedJobProcess', () => {
     const {
       api,
       events,
+      startupInfos,
       createProcessAsUserW,
       assignProcessToJobObject,
       resumeThread,
@@ -102,6 +109,11 @@ describe('spawnInheritedJobProcess', () => {
       expect.anything(),
       expect.anything(),
     )
+    // SW_HIDE is the struct's zero value, so the flag alone carries the hide
+    // request; its field offset is pinned by verify/abi-probe.cpp.
+    expect(startupInfos[0]).toMatchObject({
+      dwFlags: STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW,
+    })
   })
 
   it('restores already-enabled stdio and closes the Job when inheritance setup fails', () => {

@@ -143,6 +143,7 @@ describe('Windows parent runner contract', () => {
     expect(spawn).toHaveBeenCalledWith('C:\\node.exe', [
       'C:\\runner.js', '--', 'tool.exe', 'literal arg',
     ], expect.objectContaining({
+      windowsHide: true,
       cwd: process.cwd(),
       stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2],
     }))
