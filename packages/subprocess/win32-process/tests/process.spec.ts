@@ -6,8 +6,8 @@ import {
   spawnInheritedJobProcess,
   spawnPipedProcess,
 } from '../src/index.ts'
-import { CREATE_SUSPENDED } from '../src/abi.ts'
-import { PROCESS_INFORMATION } from '../src/ffi.ts'
+import { CREATE_SUSPENDED, STARTF_USESHOWWINDOW, STARTF_USESTDHANDLES, SW_HIDE } from '../src/abi.ts'
+import { PROCESS_INFORMATION, STARTUPINFOW } from '../src/ffi.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/index.ts'
 
 const PVOID = koffi.pointer('void')
@@ -102,6 +102,11 @@ describe('spawnInheritedJobProcess', () => {
       expect.anything(),
       expect.anything(),
     )
+    const startupInfo = createProcessAsUserW.mock.calls[0]?.[9] as NativePtr
+    expect(koffi.decode(startupInfo, STARTUPINFOW)).toMatchObject({
+      dwFlags: STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW,
+      wShowWindow: SW_HIDE,
+    })
   })
 
   it('restores already-enabled stdio and closes the Job when inheritance setup fails', () => {
