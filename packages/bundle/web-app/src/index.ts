@@ -187,6 +187,7 @@ function spawnBrowserLauncher(url: string): ChildProcess {
   ], {
     env: scrubbedParentEnv(),
     stdio: ['ignore', 'inherit', 'pipe'],
+    windowsHide: true,
   })
 }
 
