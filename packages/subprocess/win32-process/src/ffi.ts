@@ -40,6 +40,12 @@ export function isNullPtr(value: NativePtr | null | undefined): value is null | 
 export interface StartupInfoInput {
   cb: number
   dwFlags: number
+  /**
+   * Window-visibility command for the new process. Read only when dwFlags
+   * carries STARTF_USESHOWWINDOW; callers setting that flag pass SW_HIDE so
+   * the child starts with no window.
+   */
+  wShowWindow?: number
   hStdInput: NativePtr
   hStdOutput: NativePtr
   hStdError: NativePtr

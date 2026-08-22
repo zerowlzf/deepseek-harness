@@ -195,7 +195,29 @@ function createRestrictedProcess(
 }
 
 /**
+ * Allocate and encode a hidden, stdio-bearing STARTUPINFOW: STARTF_USESTDHANDLES
+ * with the caller's inherited handles, plus STARTF_USESHOWWINDOW and SW_HIDE —
+ * CREATE_NO_WINDOW is unavailable here because it fails with 0xC0000142 under
+ * a restricted token.
+ * @param stdio - child stdin, stdout, and stderr handles to inherit.
+ * @returns allocated STARTUPINFOW pointer the caller must free.
+ */
+function allocHiddenStdioStartupInfo(stdio: ProcessStandardHandles): NativePtr {
+  const startupInfo = allocStartupInfo()
+  encodeStartupInfo(startupInfo, {
+    cb: abi.STARTUPINFOW_SIZE,
+    dwFlags: abi.STARTF_USESTDHANDLES | abi.STARTF_USESHOWWINDOW,
+    wShowWindow: abi.SW_HIDE,
+    hStdInput: stdio.stdin,
+    hStdOutput: stdio.stdout,
+    hStdError: stdio.stderr,
+  })
+  return startupInfo
+}
+
+/**
  * Spawn a process with anonymous-pipe stdout/stderr and immediate stdin EOF.
+ * The child starts with a hidden window (STARTF_USESHOWWINDOW with SW_HIDE).
  * @param api - active binding table.
  * @param options - command, cwd, args, and restricted primary token.
  * @returns caller-owned process and pipe read handles.
@@ -220,13 +242,10 @@ export function spawnPipedProcess(
         throwLastError(api, 'SetHandleInformation', label)
       }
     }
-    startupInfo = allocStartupInfo()
-    encodeStartupInfo(startupInfo, {
-      cb: abi.STARTUPINFOW_SIZE,
-      dwFlags: abi.STARTF_USESTDHANDLES,
-      hStdInput: stdIn.read,
-      hStdOutput: stdOut.write,
-      hStdError: stdErr.write,
+    startupInfo = allocHiddenStdioStartupInfo({
+      stdin: stdIn.read,
+      stdout: stdOut.write,
+      stderr: stdErr.write,
     })
     processInfo = allocProcessInfo()
     const created = createRestrictedProcess(
@@ -422,14 +441,7 @@ function spawnJobProcess(
       }
       enabled.push(handle)
     }
-    startupInfo = allocStartupInfo()
-    encodeStartupInfo(startupInfo, {
-      cb: abi.STARTUPINFOW_SIZE,
-      dwFlags: abi.STARTF_USESTDHANDLES,
-      hStdInput: stdio.stdin,
-      hStdOutput: stdio.stdout,
-      hStdError: stdio.stderr,
-    })
+    startupInfo = allocHiddenStdioStartupInfo(stdio)
     processInfo = allocProcessInfo()
     created = create(startupInfo, processInfo)
     if (created === 0) createFailureCode = api.getLastError()
@@ -488,6 +500,7 @@ function spawnJobProcess(
 
 /**
  * Spawn a restricted-token process suspended, assign its Job, then resume it.
+ * The child starts with a hidden window (STARTF_USESHOWWINDOW with SW_HIDE).
  * @param api - active binding table.
  * @param options - command, cwd, args, and restricted primary token.
  * @returns caller-owned process and Job handles after successful resume.
@@ -514,6 +527,7 @@ export function spawnInheritedJobProcess(
 
 /**
  * Spawn an ordinary process suspended, assign its Job, then resume it.
+ * The child starts with a hidden window (STARTF_USESHOWWINDOW with SW_HIDE).
  * @param api - active binding table.
  * @param options - command, cwd, argv, and target carrier descriptors.
  * @returns caller-owned process and Job handles after successful resume.
