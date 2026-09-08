@@ -40,6 +40,8 @@ export function isNullPtr(value: NativePtr | null | undefined): value is null | 
 export interface StartupInfoInput {
   cb: number
   dwFlags: number
+  /** Optional wShowWindow value, honoured only when dwFlags includes STARTF_USESHOWWINDOW. */
+  wShowWindow?: number
   hStdInput: NativePtr
   hStdOutput: NativePtr
   hStdError: NativePtr

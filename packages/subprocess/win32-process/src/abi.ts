@@ -2,6 +2,10 @@
 
 /** STARTUPINFOW uses the standard input, output, and error handles. */
 export const STARTF_USESTDHANDLES = 0x00000100
+/** STARTF_USESHOWWINDOW: STARTUPINFOW dwFlags — the wShowWindow field is honoured. */
+export const STARTF_USESHOWWINDOW = 0x00000001
+/** SW_HIDE: wShowWindow value — launch the child with a hidden window. */
+export const SW_HIDE = 0
 /** HandleInformation flag that permits child inheritance. */
 export const HANDLE_FLAG_INHERIT = 0x1
 /** Infinite WaitForSingleObject timeout. */
