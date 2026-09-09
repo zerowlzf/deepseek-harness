@@ -660,6 +660,16 @@ describe('released event and payload inventory', () => {
     }
   })
 
+  // Local deviation from the frozen released-v0 inventory: 0.1.2-era runtimes
+  // appended permission/preset events carrying an `origin` provenance member,
+  // so this build admits it as an optional non-empty string. The regression is
+  // pinned here because the frozen inventory itself must keep matching upstream.
+  it('admits the released permission/preset origin provenance member', () => {
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: 'selection' }) }).not.toThrow()
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: '' }) }).toThrow(/origin/)
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: 1 }) }).toThrow(/origin/)
+  })
+
   it('refuses every relationship-specific invalid payload branch', () => {
     const cases: Array<[string, SessionFormatJsonValue]> = [
       ['command/done', { commandId: 'c', kind: 'success', sourceEventSeq: 3 }],
