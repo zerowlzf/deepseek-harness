@@ -87,7 +87,8 @@ function normalizeReleasedV0Event(
 ): SessionFormatEvent {
   const named = normalizeLegacyCompactionType(event)
   assertSupportedLegacyType(named, sessionId)
-  const start = normalizeLegacyTurnStart(named, sessionId)
+  const descriptor = normalizeLegacySubagentDescriptor(named)
+  const start = normalizeLegacyTurnStart(descriptor, sessionId)
   const end = normalizeLegacyTurnEnd(start, sessionId)
   const header = normalizeLegacyRequestHeader(end, sessionId)
   const steering = normalizeLegacySteering(header, sessionId)
@@ -114,6 +115,20 @@ function normalizeLegacyCompactionType(event: SessionFormatEvent): SessionFormat
     default:
       return event
   }
+}
+
+/**
+ * Bump the descriptor version stamped by every release before 0.1.2-alpha.1.
+ * Version 3 added only the optional `agentReasoningEffort` member, so a
+ * version 2 payload keeps its meaning; other versions stay unsupported.
+ * @param event - normalized released-v0 event.
+ * @returns the event with a current descriptor version, or unchanged.
+ */
+function normalizeLegacySubagentDescriptor(event: SessionFormatEvent): SessionFormatEvent {
+  if (event.type !== 'subagent/descriptor') return event
+  const data = releasedV0Record(event.data, `subagent/descriptor ${event.seq} data`)
+  if (data['version'] !== 2) return event
+  return { ...event, data: { ...data, version: 3 } }
 }
 
 function assertSourceDeliveryMarker(
