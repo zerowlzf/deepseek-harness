@@ -116,6 +116,30 @@ describe('released Session format v0 to v1', () => {
     expect(output.values).toEqual([marker])
   })
 
+  it('bumps the released version 2 subagent descriptor to the current version', () => {
+    const descriptor = {
+      type: 'subagent/descriptor', seq: 0, time: 2,
+      data: {
+        version: 2, mode: 'continuable', provider: 'spawn', label: 'child',
+        agentProvider: 'b-ai', agentModel: 'deepseek-v4-flash',
+      },
+    } as const
+
+    expect(createMigrationStage('descriptor-v2').transform(descriptor)).toEqual([
+      { ...descriptor, data: { ...descriptor.data, version: 3 } },
+    ])
+  })
+
+  it('refuses a subagent descriptor version it cannot interpret', () => {
+    const descriptor = {
+      type: 'subagent/descriptor', seq: 0, time: 2,
+      data: { version: 4, mode: 'one-shot', provider: 'spawn' },
+    } as const
+
+    expect(() => createMigrationStage('descriptor-v4').transform(descriptor))
+      .toThrow(/unsupported descriptor version 4/)
+  })
+
   it('recovers only the complete row prefix and refuses a later committing turn end', () => {
     const header = {
       type: 'session',
