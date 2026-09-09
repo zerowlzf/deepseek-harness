@@ -660,6 +660,19 @@ describe('released event and payload inventory', () => {
     }
   })
 
+  // The 0.1.1-rc.1 runtime appended permission/preset events carrying an
+  // `origin` provenance member; the release that followed dropped the member
+  // without admitting it to the frozen inventory, so those sessions refused to
+  // migrate. These literals are the complete set the released runtime wrote.
+  it('admits the released permission/preset origin provenance member', () => {
+    for (const origin of ['default', 'selection', 'inferred']) {
+      expect(() => { assertPayload('permission/preset', { preset: 'default', origin }) }).not.toThrow()
+    }
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: 'custom' }) }).toThrow(/origin/)
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: '' }) }).toThrow(/origin/)
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: 1 }) }).toThrow(/origin/)
+  })
+
   it('refuses every relationship-specific invalid payload branch', () => {
     const cases: Array<[string, SessionFormatJsonValue]> = [
       ['command/done', { commandId: 'c', kind: 'success', sourceEventSeq: 3 }],
