@@ -58,6 +58,12 @@ describe('durable V3 admission failures', () => {
     expect(() =>{  assertEvent(extension, 2) }).toThrow(/unclassified/)
   })
 
+  it('admits the inherited released permission/preset origin provenance member', () => {
+    const selected = event('permission/preset', { preset: 'default', origin: 'selection' })
+    expect(() =>{  assertEvent(selected, 2) }).not.toThrow()
+    expect(() =>{  assertEvent({ ...selected, data: { preset: 'default', origin: 'custom' } }, 2) }).toThrow(/origin/)
+  })
+
   it.each([0, -1, 1.5])('rejects invalid system step coordinates %s', (step) => {
     expect(() => releasedV3SessionFormatCodec.encodeEvent(event('system/message', { ...system, step }, { surfaceOp: 'append' }))).toThrow()
   })
