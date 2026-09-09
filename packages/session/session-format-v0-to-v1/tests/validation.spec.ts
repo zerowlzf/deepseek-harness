@@ -65,7 +65,7 @@ const validPayloads: Readonly<Record<string, SessionFormatJsonValue>> = {
   },
   'llm/retry-started': { retryId: 'retry-1', turn: 1, step: 0, retry: 1 },
   'model/selection': { provider: 'mock', model: 'mock', reasoningEffort: 'high' },
-  'permission/preset': { preset: 'default' },
+  'permission/preset': { preset: 'default', origin: 'selection' },
   'plan/mode': { active: true },
   'request/context': { provider: 'mock', model: 'mock', contextWindow: 8192 },
   'request/header': {
@@ -658,6 +658,19 @@ describe('released event and payload inventory', () => {
     for (const [type, data] of cases) {
       expect(() => { assertPayload(type, data) }, type).not.toThrow()
     }
+  })
+
+  // The 0.1.1-rc.1 runtime appended permission/preset events carrying an
+  // `origin` provenance member; the release that followed dropped the member
+  // without admitting it to the frozen inventory, so those sessions refused to
+  // migrate. These literals are the complete set the released runtime wrote.
+  it('admits the released permission/preset origin provenance member', () => {
+    for (const origin of ['default', 'selection', 'inferred']) {
+      expect(() => { assertPayload('permission/preset', { preset: 'default', origin }) }).not.toThrow()
+    }
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: 'custom' }) }).toThrow(/origin/)
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: '' }) }).toThrow(/origin/)
+    expect(() => { assertPayload('permission/preset', { preset: 'default', origin: 1 }) }).toThrow(/origin/)
   })
 
   it('refuses every relationship-specific invalid payload branch', () => {
