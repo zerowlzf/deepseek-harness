@@ -246,6 +246,14 @@
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
+    # Session and turn cost over user-owned per-model rates, plus the DeepSeek
+    # account balance this row reads and caches in its `ui-billing` settings
+    # namespace. One dual-face row: the host half owns the namespace and the
+    # balance refresh chain, the browser half renders the pills and the Billing
+    # settings page.
+    - id: ui-billing
+      name: '@deepseek-ai/dsh-client-ui-billing'
+
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
 

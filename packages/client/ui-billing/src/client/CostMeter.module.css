@@ -1,0 +1,87 @@
+/* Billing pills under the composer, matching the shipped stats pills: 13/20
+   tertiary text tier with a hover-pill affordance. Each pill's dialog wears
+   the shared stat-dialog.module.css skin.
+
+   The composer dock is a centred column with one row per registered entry, so
+   this entry shares the line with the shipped turn/step and token pills by
+   pulling itself up by exactly one row: the shipped row is 26px tall with the
+   same 4px top padding and the same side clearance, so the two rows coincide.
+
+   Coinciding is not enough on its own: that row centres a group whose width
+   follows the figures it reads, so a second row that centred or right-aligned
+   its own content would draw through it. This row instead starts its pills a
+   share of the shared box from the left, which keeps them clear of the widest
+   reading the shipped group can produce and lets the two groups read as one
+   line: the shipped figures, then the cost of the session and the balance. */
+
+.root {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 12px;
+  max-width: var(--dsh-chat-content-width);
+  width: 100%;
+  box-sizing: border-box;
+  /* `41.2%` of the box is 280px at the 680px clamp: the shipped group's widest
+     reading is 320px, but it is centred, so its first pill starts 180px in and
+     its last one ends at 500px — this inset clears that end by 12px once the
+     16px side inset is added. */
+  padding: 4px 0px 0px calc(41.2% + 16px);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  align-self: flex-end;
+  margin-top: -26px;
+  /* Overlapping the shipped row by one row height ends outside this entry's
+     own normal-flow box, so clipping on this element would cut the pills. */
+  overflow: visible;
+}
+
+/* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */
+.anchor {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: none;
+  border-radius: 24px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pill svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.pill:hover,
+.pill[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Token count trailing one route name inside the cost dialog. */
+.tokens {
+  margin-left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

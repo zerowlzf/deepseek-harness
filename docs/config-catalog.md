@@ -401,6 +401,30 @@ export interface Config {
 
 Source: [`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-client-ui-billing"></a>
+
+## `@deepseek-ai/dsh-client-ui-billing`
+
+Requires: `settings` · `timer` · `credentials`
+
+```ts config-catalog
+/** Plugin configuration, all optional. */
+export interface Config {
+  /** Credential reference holding the DeepSeek API key. */
+  apiKeyEnv: string
+  /** DeepSeek API base; `/user/balance` is appended. */
+  baseURL: string
+  /** Currency to report when the account holds several. */
+  currency: string
+  /** Delay between balance reads; `0` reads once at startup and after each manual refresh. */
+  refreshIntervalMs: number
+  /** Whole-request deadline for one read. */
+  requestTimeoutMs: number
+}
+```
+
+Source: [`packages/client/ui-billing/src/index.ts:32`](../packages/client/ui-billing/src/index.ts)
+
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-code-runtime-worker-thread`
