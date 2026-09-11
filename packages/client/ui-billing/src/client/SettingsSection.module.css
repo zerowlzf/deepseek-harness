@@ -1,0 +1,169 @@
+/* Billing settings page: an intro line, the read-only balance card, then one
+   card per provider holding a rate row per model. Tokens match the shipped
+   settings pages (secondary text tier, alias borders and surfaces). */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.intro {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.sectionTitle {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-surface, transparent);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.cardTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cardTitle svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.cardValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.providerId {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.modelName {
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 92px;
+  padding: 4px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.input:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-border-l1);
+}
+
+.input:disabled {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.warn {
+  color: var(--dsw-alias-label-warning, var(--dsw-alias-label-secondary));
+}
+
+.empty {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+}
