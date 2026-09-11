@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-13-web-billing-display-over-user-owned-rates.md
+2026-09-13-web-billing-display-over-user-owned-rates.md: 5ef3660656ec639476b3fa288e2765f0e48d725b
+2026-09-13-web-billing-display-over-user-owned-rates.zh.md: fb425fc5c6a536a24c62478213f4eb54edbc9439

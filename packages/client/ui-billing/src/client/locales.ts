@@ -1,0 +1,126 @@
+/**
+ * Locale dictionary for the `ui-billing` client surfaces.
+ *
+ * @module @deepseek-ai/dsh-client-ui-billing/locales
+ */
+
+/** Dictionary namespace owned by this plugin's copy; the settings section it renders from is `ui-billing`. */
+export const LOCALE_NS = 'billing'
+
+/** Simplified Chinese dictionary (the key-set source of truth). */
+export const zh = {
+  'section.label': '计费',
+  'section.intro': '会话费用按这里的单价计算：每条路由 = 提供方 / 模型，单价单位为「元 / 百万 tokens」。未填写的路由不计费。',
+  'section.balanceTitle': 'DeepSeek 账户余额',
+  'section.balanceUnavailable': '未读取',
+  'section.balanceError': '余额读取失败：{message}',
+  'section.balanceAt': '更新于 {time}',
+  'section.writable': '此部署的设置为只读，无法保存单价。',
+  'section.providers': '模型单价',
+  'section.providersEmpty': '尚未发现任何已配置的提供方，请先在「模型」页添加提供方与模型。',
+  'section.providerPathUnknown': '此提供方没有可读的模型列表，请手动添加路由。',
+  'section.officialBadge': '官方',
+  'section.rateHit': '缓存命中',
+  'section.rateMiss': '缓存未命中',
+  'section.rateOutput': '输出',
+  'section.save': '保存',
+  'section.saving': '保存中…',
+  'section.saved': '已保存',
+  'section.clear': '清除',
+  'section.addRoute': '手动添加路由',
+  'section.addPlaceholder': 'provider/model',
+  'section.add': '添加',
+  'section.invalidRoute': '请输入「提供方/模型」，例如 bai/glm-5.3-flash',
+  'section.writeFailed': '保存失败：{message}',
+  'pill.sessionCost': '本会话 {amount}',
+  'pill.balance': '余额 {amount}',
+  'pill.balanceUnknown': '余额 -',
+  'pill.costUnknown': '本会话 -',
+  'pill.dialog.costTitle': '本会话费用',
+  'pill.dialog.balanceTitle': 'DeepSeek 账户余额',
+  'pill.dialog.total': '合计',
+  'pill.dialog.unpriced': '未配置单价',
+  'pill.dialog.unpricedHint': '在「设置 → 计费」中为 {route} 填写单价',
+  'pill.dialog.noRateHint': '没有可用的单价，费用无法计算。请在「设置 → 计费」中填写。',
+  'pill.dialog.balance': '余额',
+  'pill.dialog.available': '账户状态',
+  'pill.dialog.availableYes': '可继续调用',
+  'pill.dialog.availableNo': '余额不足',
+  'pill.dialog.updatedAt': '更新时间',
+  'pill.dialog.currency': '币种',
+  'pill.dialog.tokens': 'tokens',
+  'turn.cost': '本轮 {amount}',
+  'turn.costUnknown': '本轮 -',
+  'turn.title': '本轮费用',
+  'turn.unpriced': '未配置单价，费用未计入',
+  'value.unavailable': '-',
+  'value.justNow': '刚刚',
+  'value.minutesAgo': '{count} 分钟前',
+  'value.hoursAgo': '{count} 小时前',
+  'value.daysAgo': '{count} 天前',
+}
+
+/** English dictionary (same key set). */
+export const en: Record<BillingKey, string> = {
+  'section.label': 'Billing',
+  'section.intro': 'Session cost uses the rates below. Each route is a provider/model pair and each rate is per million tokens. A route with no rates is not billed.',
+  'section.balanceTitle': 'DeepSeek account balance',
+  'section.balanceUnavailable': 'Not read',
+  'section.balanceError': 'Balance read failed: {message}',
+  'section.balanceAt': 'Updated {time}',
+  'section.writable': 'This deployment stores settings read-only, so rates cannot be saved.',
+  'section.providers': 'Model rates',
+  'section.providersEmpty': 'No configured provider was found. Add a provider and its models on the Models page first.',
+  'section.providerPathUnknown': 'This provider exposes no readable model list; add its routes manually.',
+  'section.officialBadge': 'official',
+  'section.rateHit': 'Cache hit',
+  'section.rateMiss': 'Cache miss',
+  'section.rateOutput': 'Output',
+  'section.save': 'Save',
+  'section.saving': 'Saving…',
+  'section.saved': 'Saved',
+  'section.clear': 'Clear',
+  'section.addRoute': 'Add a route manually',
+  'section.addPlaceholder': 'provider/model',
+  'section.add': 'Add',
+  'section.invalidRoute': 'Enter provider/model, for example bai/glm-5.3-flash',
+  'section.writeFailed': 'Save failed: {message}',
+  'pill.sessionCost': '{amount} this session',
+  'pill.balance': 'Balance {amount}',
+  'pill.balanceUnknown': 'Balance -',
+  'pill.costUnknown': '- this session',
+  'pill.dialog.costTitle': 'Session cost',
+  'pill.dialog.balanceTitle': 'DeepSeek account balance',
+  'pill.dialog.total': 'Total',
+  'pill.dialog.unpriced': 'No rates configured',
+  'pill.dialog.unpricedHint': 'Set rates for {route} in Settings → Billing',
+  'pill.dialog.noRateHint': 'No route has rates yet, so no cost can be computed. Set them in Settings → Billing.',
+  'pill.dialog.balance': 'Balance',
+  'pill.dialog.available': 'Account state',
+  'pill.dialog.availableYes': 'Can keep calling',
+  'pill.dialog.availableNo': 'Insufficient balance',
+  'pill.dialog.updatedAt': 'Updated',
+  'pill.dialog.currency': 'Currency',
+  'pill.dialog.tokens': 'tokens',
+  'turn.cost': '{amount} this turn',
+  'turn.costUnknown': '- this turn',
+  'turn.title': 'Turn cost',
+  'turn.unpriced': 'No rates configured; this turn is not billed',
+  'value.unavailable': '-',
+  'value.justNow': 'just now',
+  'value.minutesAgo': '{count} min ago',
+  'value.hoursAgo': '{count} h ago',
+  'value.daysAgo': '{count} d ago',
+}
+
+/** Union of this namespace's dictionary keys. */
+export type BillingKey = keyof typeof zh
+
+/**
+ * Translate seat over {@link BillingKey}. The index signature keeps this
+ * assignable from the framework's merged `LocaleKeysOf<'billing'>` seat, whose
+ * keys are a merge-extensible superset of this dictionary.
+ */
+export interface BillingTranslate {
+  (key: BillingKey, params?: Record<string, unknown>): string
+}
