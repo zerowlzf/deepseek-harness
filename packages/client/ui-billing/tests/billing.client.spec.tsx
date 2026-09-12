@@ -657,16 +657,70 @@ describe('settings page', () => {
     // A closed card summarises what it holds: two models, one of them priced.
     expect(screen.getByText('2 models')).toBeDefined()
     expect(screen.getByText('1 priced')).toBeDefined()
-    expect(screen.queryByLabelText('bai/glm-5.3-flash peak Cache hit')).toBeNull()
+    expect(screen.queryByLabelText('bai/glm-5.3-flash Cache hit')).toBeNull()
 
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
-    const saved = screen.getByLabelText('bai/glm-5.3-flash peak Cache hit') as HTMLInputElement
+    const saved = screen.getByLabelText('bai/glm-5.3-flash Cache hit') as HTMLInputElement
     expect(saved.value).toBe('0.15')
-    const blank = screen.getByLabelText('bai/qwen3.8-flash peak Cache hit') as HTMLInputElement
+    const blank = screen.getByLabelText('bai/qwen3.8-flash Cache hit') as HTMLInputElement
     expect(blank.value).toBe('')
     // The control reads as its opposite state while the card is open.
     fireEvent.click(screen.getByLabelText('Collapse rates for bai'))
-    expect(screen.queryByLabelText('bai/glm-5.3-flash peak Cache hit')).toBeNull()
+    expect(screen.queryByLabelText('bai/glm-5.3-flash Cache hit')).toBeNull()
+  })
+
+  it('shows one band per non-official route and reveals a second on request', async () => {
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot({
+      value: {
+        currency: 'CNY',
+        models: { 'bai/glm-5.3-flash': FLASH_RATES },
+        cache: null,
+        cacheError: null,
+      },
+    }))
+    const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
+    render(<BillingSection {...seats()} {...face} t={t} />)
+
+    await screen.findByText('BAI')
+    fireEvent.click(screen.getByLabelText('Edit rates for bai'))
+    // This provider prices one figure at every hour, so its fields carry no
+    // window to name and the second band stays off the page.
+    expect(screen.getByLabelText('bai/glm-5.3-flash Cache hit')).toBeDefined()
+    expect(screen.queryByLabelText('bai/glm-5.3-flash off-peak Cache hit')).toBeNull()
+    // Asking for it turns the row into the two labelled bands a provider that
+    // bills by window carries.
+    fireEvent.click(screen.getByLabelText('Add an off-peak rate to bai/glm-5.3-flash'))
+    const hit = screen.getByLabelText('bai/glm-5.3-flash peak Cache hit') as HTMLInputElement
+    expect(hit.value).toBe('0.15')
+    const offPeak = screen.getByLabelText('bai/glm-5.3-flash off-peak Cache hit') as HTMLInputElement
+    expect(offPeak.value).toBe('')
+    expect(offPeak.placeholder).toBe('same as peak')
+    expect(screen.queryByLabelText('Add an off-peak rate to bai/glm-5.3-flash')).toBeNull()
+  })
+
+  it('shows both bands of a route that already stores a second one', async () => {
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot({
+      value: {
+        currency: 'CNY',
+        models: {
+          'bai/glm-5.3-flash': { ...FLASH_RATES, offPeak: { cacheHit: 0.075, cacheMiss: 2.25, output: 6.75 } },
+        },
+        cache: null,
+        cacheError: null,
+      },
+    }))
+    const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
+    render(<BillingSection {...seats()} {...face} t={t} />)
+
+    await screen.findByText('BAI')
+    fireEvent.click(screen.getByLabelText('Edit rates for bai'))
+    // A route that holds a second band shows it unasked: what a route is billed
+    // at is never hidden state.
+    const offPeak = screen.getByLabelText('bai/glm-5.3-flash off-peak Cache hit') as HTMLInputElement
+    expect(offPeak.value).toBe('0.075')
+    expect(screen.queryByLabelText('Add an off-peak rate to bai/glm-5.3-flash')).toBeNull()
   })
 
   it('shows the published official price as the fallback a route is billed at', async () => {
@@ -731,17 +785,25 @@ describe('settings page', () => {
     expect(card?.textContent).toContain('Published DeepSeek prices')
     expect(card?.textContent).toContain('1 models')
     expect(card?.textContent).toContain('api-docs.deepseek.com')
-    // The rates section names the window in force, so the two rows of fields
-    // below it are read against the figure the provider charges now.
-    expect(screen.getByText(/Peak hours are Beijing time/)).toBeDefined()
-
+    // The official card names the window in force above its two rows of fields,
+    // so each row is read against the figure the provider charges now.
     fireEvent.click(screen.getByLabelText('Edit rates for deepseek-official'))
+    expect(screen.getByText(/Only the official DeepSeek provider bills in two windows/)).toBeDefined()
     const hit = screen.getByLabelText('deepseek-official/deepseek-v4-flash peak Cache hit') as HTMLInputElement
     expect(hit.value).toBe('')
     expect(hit.placeholder).toBe('0.04')
     const offPeak = screen.getByLabelText('deepseek-official/deepseek-v4-flash off-peak Cache hit') as HTMLInputElement
     expect(offPeak.placeholder).toBe('0.02')
     expect(screen.getByText('default rate')).toBeDefined()
+    // A typed second band is handed to the plugin as its own set of fields.
+    fireEvent.change(offPeak, { target: { value: '0.03' } })
+    fireEvent.click(screen.getByText('Save'))
+    await act(async () => { await Promise.resolve() })
+    expect(face.saveRate).toHaveBeenCalledWith(
+      'deepseek-official/deepseek-v4-flash',
+      { cacheHit: '', cacheMiss: '', output: '' },
+      { cacheHit: '0.03', cacheMiss: '', output: '' },
+    )
   })
 
   it('reports why the Host could not read the published prices', async () => {
@@ -776,21 +838,19 @@ describe('settings page', () => {
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
 
-    const hit = screen.getByLabelText('bai/glm-5.3-flash peak Cache hit')
+    const hit = screen.getByLabelText('bai/glm-5.3-flash Cache hit')
     fireEvent.change(hit, { target: { value: '0.15' } })
-    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash peak Cache miss'), { target: { value: '4.5' } })
-    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash peak Output'), { target: { value: '13.5' } })
-    // A second band the user typed is carried as its own set of fields; the
-    // plugin decides what an entirely empty off-peak band means.
-    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash off-peak Output'), { target: { value: '6.75' } })
+    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash Cache miss'), { target: { value: '4.5' } })
+    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash Output'), { target: { value: '13.5' } })
     fireEvent.click(screen.getAllByText('Save')[0] as HTMLElement)
     await act(async () => { await Promise.resolve() })
     // The page hands the plugin both bands as typed; the plugin owns how they
-    // become settings writes.
+    // become settings writes. This provider bills one figure at every hour, so
+    // it offers no off-peak fields and hands over an empty band.
     expect(face2.saveRate).toHaveBeenCalledWith(
       'bai/glm-5.3-flash',
       { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' },
-      { cacheHit: '', cacheMiss: '', output: '6.75' },
+      { cacheHit: '', cacheMiss: '', output: '' },
     )
     expect(screen.getByText('Saved')).toBeDefined()
   })
@@ -835,10 +895,11 @@ describe('settings page', () => {
 
     fireEvent.change(field, { target: { value: 'custom/model' } })
     fireEvent.click(screen.getByText('Add'))
-    expect(screen.getByLabelText('custom/model peak Cache hit')).toBeDefined()
-    // Both windows are offered for a hand-added route too, so a provider that
-    // publishes two prices can be entered by hand.
-    expect(screen.getByLabelText('custom/model off-peak Cache hit')).toBeDefined()
+    expect(screen.getByLabelText('custom/model Cache hit')).toBeDefined()
+    // A route the user adds by hand belongs to no provider that bills by time
+    // of day, so the page offers it one band of fields.
+    expect(screen.queryByLabelText('custom/model off-peak Cache hit')).toBeNull()
+    expect(screen.queryAllByLabelText('custom/model Cache hit')).toHaveLength(1)
   })
 
   it('keeps a configured provider that has no model list, so its routes can be added', async () => {

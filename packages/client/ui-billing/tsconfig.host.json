@@ -26,6 +26,9 @@
     },
     {
       "path": "../../settings/settings"
+    },
+    {
+      "path": "../../web/web"
     }
   ]
 }

@@ -5,14 +5,14 @@
 // its edit control, one row per price window. Rates are per million tokens in
 // the account's currency, which is the unit the provider bills in.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   DEFAULT_CURRENCY, priceWindowAt, RATE_FIELDS, ROUTE_SEPARATOR, splitRouteKey,
   type ModelRate, type PriceSnapshot, type PriceWindow, type RateBand, type RateField,
 } from '../settings.ts'
-import type { ProviderRouteGroup } from './routes.ts'
+import { OFFICIAL_PROVIDER, type ProviderRouteGroup } from './routes.ts'
 import type { BillingInjected } from './face.ts'
 import { ageOf, balanceFailureText, formatBalance, priceFailureText, windowKey } from './format.ts'
 import { currencyOf } from './CostMeter.tsx'
@@ -94,6 +94,11 @@ export function BillingSection({
   // One provider card is open at a time: the page shows what the rates apply to
   // (the models the user configured), and the fields appear on demand.
   const [editing, setEditing] = useState<string | undefined>(undefined)
+  // Routes whose second band this page shows although their provider does not
+  // bill by window. The data model carries a second band for any route, and this
+  // is the control that reaches it, so a provider that starts pricing by window
+  // can be priced here before its published table states the second band.
+  const [banded, setBanded] = useState<ReadonlySet<string>>(() => new Set())
   const writable = useBilling(snapshot => snapshot.writable)
   const rates = settings?.models ?? {}
   const published = settings?.official ?? null
@@ -232,6 +237,46 @@ export function BillingSection({
     setEditing(provider)
   }
 
+  /**
+   * One window's three fields.
+   *
+   * `windowName` is the localized window the fields belong to, and it is left
+   * undefined for a provider that prices one figure at every hour: those rows
+   * carry no window to name, and labelling them would promise a second band
+   * this provider does not bill.
+   */
+  const fieldRow = (route: string, band: PriceWindow, windowName: string | undefined): ReactNode => (
+    <div className={css.fields}>
+      {RATE_FIELDS.map((field) => {
+        const name = t(FIELD_KEYS[field])
+        return (
+          <label key={field} className={css.field}>
+            <span className={css.fieldLabel}>{name}</span>
+            <input
+              className={css.input}
+              type="text"
+              inputMode="decimal"
+              value={valueOf(route, band, field)}
+              placeholder={band === 'offPeak'
+                ? defaultText(route, band, field, published) || t('section.offPeakPlaceholder')
+                : defaultText(route, band, field, published)}
+              disabled={!writable}
+              aria-label={windowName === undefined ? `${route} ${name}` : `${route} ${windowName} ${name}`}
+              onChange={(event) => {
+                const text = event.currentTarget.value
+                setDrafts((current) => {
+                  const next = new Map(current)
+                  next.set(draftKey(route, band, field), text)
+                  return next
+                })
+              }}
+            />
+          </label>
+        )
+      })}
+    </div>
+  )
+
   return (
     <div className={css.page}>
       <p className={css.intro}>{t('section.intro')}</p>
@@ -291,11 +336,13 @@ export function BillingSection({
 
       <section className={css.rates} data-billing-rates>
         <h3 className={css.sectionTitle}>{t('section.providers')}</h3>
-        <p className={css.note}>{t('section.windowNote', { window: t(windowKey(window)) })}</p>
         {cards.length === 0 && <p className={css.empty}>{t('section.providersEmpty')}</p>}
         {cards.map(([provider, models]) => {
           const group = groupOf(provider)
           const open = editing === provider
+          // Only the official provider bills by time of day, so only its cards
+          // carry a second band of fields.
+          const byWindow = group?.official === true || provider === OFFICIAL_PROVIDER
           const pricedCount = models.filter(model =>
             priced[`${provider}${ROUTE_SEPARATOR}${model}`] !== undefined).length
           return (
@@ -329,9 +376,21 @@ export function BillingSection({
               </header>
               {open && (
                 <div className={css.models} data-billing-provider-models={provider}>
+                  {/* The window rule belongs to the provider that bills by it,
+                      so it is stated on that card rather than above every one. */}
+                  {byWindow && (
+                    <p className={css.note}>{t('section.windowNote', { window: t(windowKey(window)) })}</p>
+                  )}
                   {models.map((model) => {
                     const route = `${provider}${ROUTE_SEPARATOR}${model}`
                     const onDefault = rates[route] === undefined && defaultRateOf(route, published) !== undefined
+                    // Only a provider that bills by time of day carries two
+                    // bands by default; another route gains them once it
+                    // actually holds a second band, or on request.
+                    const shown = byWindow
+                      || banded.has(route)
+                      || rates[route]?.offPeak !== undefined
+                      || defaultRateOf(route, published)?.offPeak !== undefined
                     return (
                       <div key={route} className={css.row} data-billing-rate-row={route}>
                         <span className={css.modelName} title={model}>
@@ -344,37 +403,29 @@ export function BillingSection({
                             </span>
                           )}
                         </span>
-                        {BANDS.map(band => (
-                          <div key={band} className={css.band} data-billing-band={band}>
-                            <span className={css.bandLabel}>{t(windowKey(band))}</span>
-                            <div className={css.fields}>
-                              {RATE_FIELDS.map(field => (
-                                <label key={field} className={css.field}>
-                                  <span className={css.fieldLabel}>{t(FIELD_KEYS[field])}</span>
-                                  <input
-                                    className={css.input}
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={valueOf(route, band, field)}
-                                    placeholder={band === 'offPeak'
-                                      ? defaultText(route, band, field, published) || t('section.offPeakPlaceholder')
-                                      : defaultText(route, band, field, published)}
-                                    disabled={!writable}
-                                    aria-label={`${route} ${t(windowKey(band))} ${t(FIELD_KEYS[field])}`}
-                                    onChange={(event) => {
-                                      const text = event.currentTarget.value
-                                      setDrafts((current) => {
-                                        const next = new Map(current)
-                                        next.set(draftKey(route, band, field), text)
-                                        return next
-                                      })
-                                    }}
-                                  />
-                                </label>
-                              ))}
+                        {shown
+                          ? BANDS.map(band => (
+                            <div key={band} className={css.band} data-billing-band={band}>
+                              <span className={css.bandLabel}>{t(windowKey(band))}</span>
+                              {fieldRow(route, band, t(windowKey(band)))}
                             </div>
-                          </div>
-                        ))}
+                          ))
+                          : (
+                            <div className={css.singleBand}>
+                              {fieldRow(route, 'peak', undefined)}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={!writable}
+                                aria-label={t('section.revealOffPeakFor', { route })}
+                                onClick={() => {
+                                  setBanded(current => new Set(current).add(route))
+                                }}
+                              >
+                                {t('section.revealOffPeak')}
+                              </Button>
+                            </div>
+                          )}
                         <div className={css.actions}>
                           <Button
                             size="sm"
