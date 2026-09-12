@@ -14,23 +14,20 @@ import { createPortal } from 'react-dom'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { BalanceSnapshot } from '../settings.ts'
-import { DEFAULT_CURRENCY, routeKey } from '../settings.ts'
+import type { BalanceSnapshot, PriceWindow } from '../settings.ts'
+import { DEFAULT_CURRENCY, pricesByWindow, routeKey } from '../settings.ts'
 import type { BillingInjected } from './face.ts'
 import { effectiveRates } from './official-rates.ts'
 import { LOCALE_NS } from './locales.ts'
-import { bucketDelta, isEmptyBuckets, sessionBuckets, sessionCost, type RateTable, type SessionBuckets } from './cost.ts'
-import { ageOf, balanceFailureText, formatAmount, formatBalance } from './format.ts'
+import {
+  bucketDelta, chargeWindow, isEmptyBuckets, sessionBuckets, sessionCost,
+  type RateTable, type SessionCostStep,
+} from './cost.ts'
+import { ageOf, balanceFailureText, formatAmount, formatBalance, windowKey } from './format.ts'
 import { IconCoinOutline16, IconWalletOutline16 } from './icons.tsx'
 import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog.ts'
 import css from './CostMeter.module.css'
 import dialogCss from './stat-dialog.module.css'
-
-/** One billed stretch of the session, as the delta fold recorded it. */
-interface AccumulatedStep {
-  readonly route: string
-  readonly buckets: SessionBuckets
-}
 
 /**
  * Props of the composer-stats billing figures: the slot's runtime share (the
@@ -69,9 +66,9 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
   // One selector over the namespace snapshot: the component re-renders on the
   // fields it reads and holds no subscription of its own.
   const settings = useBilling(snapshot => snapshot.value)
-  // Stored rows, with the published official prices filling in the official
-  // routes nobody has priced.
-  const rates = effectiveRates(settings?.models)
+  // Stored rows, over the newest published table, over the shipped snapshot:
+  // the official routes nobody has priced still read a cost out of the box.
+  const rates = effectiveRates(settings?.models, settings?.official ?? null)
   const balance = settings?.cache ?? null
   const balanceError = settings?.cacheError ?? null
 
@@ -80,7 +77,7 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
   // whose log carries no billed usage yet is a third state: the projection
   // exists but is all zeroes, which is not the same as an unpriced session.
   const [accumulated, setAccumulated] = useState<{
-    steps: readonly AccumulatedStep[]
+    steps: readonly SessionCostStep[]
     seen: TokenUsageProjection | undefined
     billed: boolean
   }>({ steps: [], seen: undefined, billed: false })
@@ -89,17 +86,20 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
     setAccumulated((state) => {
       if (usage === undefined) return state.seen === undefined ? state : { steps: [], seen: undefined, billed: false }
       const route = activeRoute(selection)
+      // Each stretch is stamped with the moment it was observed, which is the
+      // window the provider was pricing at while those tokens were produced.
+      const at = Date.now()
       if (state.seen === undefined) {
         // First sight of the running total: it belongs to routes this browser
         // never observed, so one step under the newest known route prices it as
         // well as any split could.
         return isEmptyBuckets(sessionBuckets(usage))
           ? { steps: [], seen: usage, billed: false }
-          : { steps: [{ route, buckets: sessionBuckets(usage) }], seen: usage, billed: true }
+          : { steps: [{ route, at, buckets: sessionBuckets(usage) }], seen: usage, billed: true }
       }
       const delta = bucketDelta(sessionBuckets(state.seen), sessionBuckets(usage))
       if (isEmptyBuckets(delta)) return state
-      return { steps: [...state.steps, { route, buckets: delta }], seen: usage, billed: true }
+      return { steps: [...state.steps, { route, at, buckets: delta }], seen: usage, billed: true }
     })
   }, [usage, selection])
 
@@ -179,43 +179,48 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
   )
 }
 
-/** One route's aggregate for the cost dialog. */
+/** One route's aggregate for the cost dialog, within the window it was billed in. */
 interface RouteRow {
   readonly route: string
+  /** Window the row's tokens were billed in; a route with one price reports `peak`. */
+  readonly window: PriceWindow
   readonly tokens: number
   readonly cost: number
   readonly priced: boolean
 }
 
 /**
- * Aggregate accumulated stretches per route for display.
+ * Aggregate accumulated stretches per charge for display.
  * @param steps - every billed stretch in accumulation order.
  * @param rates - configured rates by route.
- * @returns one row per route, in first-seen order.
+ * @returns one row per route and window, in first-seen order.
  */
 export function groupSteps(
-  steps: readonly AccumulatedStep[],
+  steps: readonly SessionCostStep[],
   rates: RateTable,
 ): RouteRow[] {
-  const byRoute = new Map<string, RouteRow>()
+  const byCharge = new Map<string, RouteRow>()
   for (const step of steps) {
+    const window = chargeWindow(step.route, step.at, rates)
+    const key = `${step.route}\u0000${window}`
     const tokens = step.buckets.uncachedInputTokens + step.buckets.cacheReadTokens
       + step.buckets.cacheWriteTokens + step.buckets.outputTokens
     const rate = rates[step.route]
-    const previous = byRoute.get(step.route)
-    byRoute.set(step.route, {
+    const previous = byCharge.get(key)
+    byCharge.set(key, {
       route: step.route,
+      window,
       tokens: (previous?.tokens ?? 0) + tokens,
       cost: (previous?.cost ?? 0) + (rate === undefined ? 0 : sessionCost([step], rates)),
       priced: (previous?.priced ?? false) || rate !== undefined,
     })
   }
-  return [...byRoute.values()]
+  return [...byCharge.values()]
 }
 
-/** One row per route that contributed to the session total. */
+/** One row per route and price window that contributed to the session total. */
 function RouteRows({ steps, rates, currency, t }: {
-  steps: readonly AccumulatedStep[]
+  steps: readonly SessionCostStep[]
   rates: RateTable
   currency: string
   t: SessionCostMeterProps['t']
@@ -225,9 +230,12 @@ function RouteRows({ steps, rates, currency, t }: {
   return (
     <dl className={dialogCss.details} data-billing-session-routes>
       {rows.map(row => (
-        <Fragment key={row.route}>
+        <Fragment key={`${row.route}\u0000${row.window}`}>
           <dt className={dialogCss.route}>
             {row.route}
+            {pricesByWindow(rates[row.route]) && (
+              <span className={dialogCss.window}>{t(windowKey(row.window))}</span>
+            )}
             <span className={css.tokens}>{`${String(row.tokens)} ${t('pill.dialog.tokens')}`}</span>
           </dt>
           <dd>{row.priced ? formatAmount(row.cost, currency) : t('pill.dialog.unpriced')}</dd>

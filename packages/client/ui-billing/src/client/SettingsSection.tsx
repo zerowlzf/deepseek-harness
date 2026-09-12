@@ -1,21 +1,22 @@
-// Billing settings page: the DeepSeek account balance the Host reads, then one
-// card per provider the user actually configured. A card is closed by default
-// and shows the models its rates apply to, the way the Models page shows a
-// provider; the price fields appear behind its edit control. Rates are per
-// million tokens in the account's currency, which is the unit the provider
-// bills in.
+// Billing settings page: the DeepSeek account balance the Host reads, the
+// published price table it reads, then one card per provider the user actually
+// configured. A card is closed by default and shows the models its rates apply
+// to, the way the Models page shows a provider; the price fields appear behind
+// its edit control, one row per price window. Rates are per million tokens in
+// the account's currency, which is the unit the provider bills in.
 
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  DEFAULT_CURRENCY, RATE_FIELDS, ROUTE_SEPARATOR, splitRouteKey, type ModelRate, type RateField,
+  DEFAULT_CURRENCY, priceWindowAt, RATE_FIELDS, ROUTE_SEPARATOR, splitRouteKey,
+  type ModelRate, type PriceSnapshot, type PriceWindow, type RateBand, type RateField,
 } from '../settings.ts'
 import type { ProviderRouteGroup } from './routes.ts'
 import type { BillingInjected } from './face.ts'
-import { ageOf, balanceFailureText, formatBalance } from './format.ts'
+import { ageOf, balanceFailureText, formatBalance, priceFailureText, windowKey } from './format.ts'
 import { currencyOf } from './CostMeter.tsx'
-import { IconWalletOutline16 } from './icons.tsx'
+import { IconCoinOutline16, IconWalletOutline16 } from './icons.tsx'
 import { LOCALE_NS, type BillingKey } from './locales.ts'
 import { defaultRateOf, effectiveRates } from './official-rates.ts'
 import css from './SettingsSection.module.css'
@@ -30,25 +31,39 @@ const FIELD_KEYS: Readonly<Record<Field, BillingKey>> = {
   output: 'section.rateOutput',
 }
 
-/** Draft text keyed `provider/model\u0000field`. */
+/** Both price windows, in the order the fields are rendered. */
+const BANDS: readonly PriceWindow[] = ['peak', 'offPeak']
+
+/** Draft text keyed `provider/model\u0000window\u0000field`. */
 type Drafts = ReadonlyMap<string, string>
 
-/** Compose the draft key for one field. */
-function draftKey(route: string, field: Field): string {
-  return `${route}\u0000${field}`
+/** Compose the draft key for one field of one window. */
+function draftKey(route: string, band: PriceWindow, field: Field): string {
+  return `${route}\u0000${band}\u0000${field}`
 }
 
-/** The configured value of one field, as display text. */
-function rateText(rate: ModelRate | undefined, field: Field): string {
-  if (rate === undefined) return ''
-  const value = rate[field]
+/** One window's rates out of a stored or published row. */
+function bandOf(rate: ModelRate | undefined, band: PriceWindow): RateBand | undefined {
+  if (rate === undefined) return undefined
+  return band === 'peak' ? rate : rate.offPeak
+}
+
+/** One field's stored value, as display text. */
+function rateText(band: RateBand | undefined, field: Field): string {
+  if (band === undefined) return ''
+  const value = band[field]
   return value === 0 ? '0' : String(value)
 }
 
-/** The published fallback one field shows as its placeholder. */
-function defaultText(route: string, field: Field): string {
-  const rate = defaultRateOf(route)
-  return rate === undefined ? '0' : rateText(rate, field)
+/**
+ * The published figure one field shows as its placeholder.
+ *
+ * The off-peak fields of a route whose published price states one band stay
+ * empty: an empty band means the route charges that window's price at every
+ * hour, which is what a provider with a single price does.
+ */
+function defaultText(route: string, band: PriceWindow, field: Field, published: PriceSnapshot | null): string {
+  return rateText(bandOf(defaultRateOf(route, published), band), field)
 }
 
 /**
@@ -81,12 +96,16 @@ export function BillingSection({
   const [editing, setEditing] = useState<string | undefined>(undefined)
   const writable = useBilling(snapshot => snapshot.writable)
   const rates = settings?.models ?? {}
-  // What a route is actually billed at: the stored row, or the published
-  // official price it falls back to. The page edits the first and shows the
-  // second as the field's placeholder.
-  const priced = effectiveRates(settings?.models)
+  const published = settings?.official ?? null
+  // What a route is actually billed at: the stored row, or the published price
+  // it falls back to. The page edits the first and shows the second as the
+  // field's placeholder.
+  const priced = effectiveRates(settings?.models, published)
   const balance = settings?.cache ?? null
   const loaded = useBillingGroups(groups => groups)
+  // The window in force as this page renders, named so the two rows of fields
+  // are read against the figure the provider is charging right now.
+  const window: PriceWindow = priceWindowAt(Date.now())
   // Routes typed on this page that no directory declares and no stored row
   // covers yet, by provider. They keep their card (and their row) open until a
   // save turns them into stored rates.
@@ -140,22 +159,34 @@ export function BillingSection({
       ? { provider, displayName: provider, models: [], modelsReadable: true, official: false, configured: true }
       : undefined)
 
-  const valueOf = (route: string, field: Field): string =>
-    drafts.get(draftKey(route, field)) ?? rateText(rates[route], field)
+  const valueOf = (route: string, band: PriceWindow, field: Field): string =>
+    drafts.get(draftKey(route, band, field)) ?? rateText(bandOf(rates[route], band), field)
+
+  /** The typed values of one window, field by field. */
+  const typedBand = (route: string, band: PriceWindow): Record<string, string> => {
+    const typed: Record<string, string> = {}
+    for (const field of RATE_FIELDS) typed[field] = valueOf(route, band, field)
+    return typed
+  }
+
+  /** Drop one route's drafts, both windows at once. */
+  const dropDrafts = (route: string): void => {
+    setDrafts((current) => {
+      const next = new Map(current)
+      for (const band of BANDS) {
+        for (const field of RATE_FIELDS) next.delete(draftKey(route, band, field))
+      }
+      return next
+    })
+  }
 
   /** Write one row through the plugin, then settle the row's own draft state. */
   const save = async (route: string): Promise<void> => {
     setStatus('saving')
     setFailure('')
-    const typed: Record<string, string> = {}
-    for (const field of RATE_FIELDS) typed[field] = valueOf(route, field)
     try {
-      await saveRate(route, typed)
-      setDrafts((current) => {
-        const next = new Map(current)
-        for (const field of RATE_FIELDS) next.delete(draftKey(route, field))
-        return next
-      })
+      await saveRate(route, typedBand(route, 'peak'), typedBand(route, 'offPeak'))
+      dropDrafts(route)
       setStatus('saved')
     } catch (error: unknown) {
       setStatus('error')
@@ -169,11 +200,7 @@ export function BillingSection({
     setFailure('')
     try {
       await clearRate(route)
-      setDrafts((current) => {
-        const next = new Map(current)
-        for (const field of RATE_FIELDS) next.delete(draftKey(route, field))
-        return next
-      })
+      dropDrafts(route)
       setStatus('saved')
     } catch (error: unknown) {
       setStatus('error')
@@ -216,13 +243,13 @@ export function BillingSection({
           </span>
           <span className={css.cardValue}>
             {balance === null
-              ? t('section.balanceUnavailable')
+              ? t('section.notRead')
               : formatBalance(balance.total, balance.currency)}
           </span>
         </header>
         <div className={css.cardMeta}>
           {balance !== null && (
-            <span>{t('section.balanceAt', { time: freshness(balance.at, t) })}</span>
+            <span>{t('section.readAt', { time: freshness(balance.at, t) })}</span>
           )}
           {balance !== null && !balance.available && (
             <span className={css.warn}>{t('pill.dialog.availableNo')}</span>
@@ -234,10 +261,37 @@ export function BillingSection({
         )}
       </section>
 
+      <section className={css.card} data-billing-official-card>
+        <header className={css.cardHead}>
+          <span className={css.cardTitle}>
+            <IconCoinOutline16 />
+            {t('section.officialTitle')}
+          </span>
+          <span className={css.cardValue}>
+            {published === null
+              ? t('section.notRead')
+              : t('section.modelCount', { count: Object.keys(published.models).length })}
+          </span>
+        </header>
+        <div className={css.cardMeta}>
+          {published !== null && (
+            <span>{t('section.readAt', { time: freshness(published.at, t) })}</span>
+          )}
+          {published !== null && (
+            <span>{t('section.officialSource', { source: sourceHost(published.source) })}</span>
+          )}
+        </div>
+        {published === null && <div className={css.note}>{t('section.officialEmpty')}</div>}
+        {settings?.officialError != null && (
+          <div className={css.warn}>{priceFailureText(settings.officialError, t)}</div>
+        )}
+      </section>
+
       {!writable && <div className={css.warn}>{t('section.writable')}</div>}
 
       <section className={css.rates} data-billing-rates>
         <h3 className={css.sectionTitle}>{t('section.providers')}</h3>
+        <p className={css.note}>{t('section.windowNote', { window: t(windowKey(window)) })}</p>
         {cards.length === 0 && <p className={css.empty}>{t('section.providersEmpty')}</p>}
         {cards.map(([provider, models]) => {
           const group = groupOf(provider)
@@ -277,7 +331,7 @@ export function BillingSection({
                 <div className={css.models} data-billing-provider-models={provider}>
                   {models.map((model) => {
                     const route = `${provider}${ROUTE_SEPARATOR}${model}`
-                    const onDefault = rates[route] === undefined && defaultRateOf(route) !== undefined
+                    const onDefault = rates[route] === undefined && defaultRateOf(route, published) !== undefined
                     return (
                       <div key={route} className={css.row} data-billing-rate-row={route}>
                         <span className={css.modelName} title={model}>
@@ -290,47 +344,54 @@ export function BillingSection({
                             </span>
                           )}
                         </span>
-                        <div className={css.fields}>
-                          {RATE_FIELDS.map(field => (
-                            <label key={field} className={css.field}>
-                              <span className={css.fieldLabel}>{t(FIELD_KEYS[field])}</span>
-                              <input
-                                className={css.input}
-                                type="text"
-                                inputMode="decimal"
-                                value={valueOf(route, field)}
-                                placeholder={defaultText(route, field)}
-                                disabled={!writable}
-                                aria-label={`${route} ${t(FIELD_KEYS[field])}`}
-                                onChange={(event) => {
-                                  const text = event.currentTarget.value
-                                  setDrafts((current) => {
-                                    const next = new Map(current)
-                                    next.set(draftKey(route, field), text)
-                                    return next
-                                  })
-                                }}
-                              />
-                            </label>
-                          ))}
-                          <div className={css.actions}>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!writable || status === 'saving'}
-                              onClick={() => { void clear(route) }}
-                            >
-                              {t('section.clear')}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="primary"
-                              disabled={!writable || status === 'saving'}
-                              onClick={() => { void save(route) }}
-                            >
-                              {status === 'saving' ? t('section.saving') : t('section.save')}
-                            </Button>
+                        {BANDS.map(band => (
+                          <div key={band} className={css.band} data-billing-band={band}>
+                            <span className={css.bandLabel}>{t(windowKey(band))}</span>
+                            <div className={css.fields}>
+                              {RATE_FIELDS.map(field => (
+                                <label key={field} className={css.field}>
+                                  <span className={css.fieldLabel}>{t(FIELD_KEYS[field])}</span>
+                                  <input
+                                    className={css.input}
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={valueOf(route, band, field)}
+                                    placeholder={band === 'offPeak'
+                                      ? defaultText(route, band, field, published) || t('section.offPeakPlaceholder')
+                                      : defaultText(route, band, field, published)}
+                                    disabled={!writable}
+                                    aria-label={`${route} ${t(windowKey(band))} ${t(FIELD_KEYS[field])}`}
+                                    onChange={(event) => {
+                                      const text = event.currentTarget.value
+                                      setDrafts((current) => {
+                                        const next = new Map(current)
+                                        next.set(draftKey(route, band, field), text)
+                                        return next
+                                      })
+                                    }}
+                                  />
+                                </label>
+                              ))}
+                            </div>
                           </div>
+                        ))}
+                        <div className={css.actions}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!writable || status === 'saving'}
+                            onClick={() => { void clear(route) }}
+                          >
+                            {t('section.clear')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            disabled={!writable || status === 'saving'}
+                            onClick={() => { void save(route) }}
+                          >
+                            {status === 'saving' ? t('section.saving') : t('section.save')}
+                          </Button>
                         </div>
                       </div>
                     )
@@ -382,7 +443,7 @@ export function BillingSection({
   )
 }
 
-/** Relative freshness of the Host-read balance. */
+/** Relative freshness of one Host read. */
 function freshness(at: number, t: BillingSectionProps['t']): string {
   const age = ageOf(at, Date.now())
   switch (age.kind) {
@@ -390,5 +451,20 @@ function freshness(at: number, t: BillingSectionProps['t']): string {
     case 'minutes': return t('value.minutesAgo', { count: age.count })
     case 'hours': return t('value.hoursAgo', { count: age.count })
     case 'days': return t('value.daysAgo', { count: age.count })
+  }
+}
+
+/**
+ * Host of one read's source URL.
+ * @param source - the URL the Host recorded for its read.
+ * @returns the host, or the recorded value when it is not a URL the page can parse.
+ */
+function sourceHost(source: string): string {
+  try {
+    return new URL(source).host
+  } catch {
+    // An operator may configure a source without a scheme; showing it as
+    // recorded still names where the figures came from.
+    return source
   }
 }

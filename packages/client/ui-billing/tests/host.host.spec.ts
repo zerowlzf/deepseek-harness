@@ -1,11 +1,11 @@
 /**
- * ui-billing Host half: the namespace registration and the balance refresh
- * chain. The settings provider is a real in-memory subclass of the seam and the
+ * ui-billing Host half: the namespace registration and the two refresh chains.
+ * The settings provider is a real in-memory subclass of the seam and the
  * credential store is the credentials package's own in-memory provider, so what
  * is asserted here is this package's own contract — the namespace it registers
  * under, what a settled read writes back, that a failed read keeps the previous
- * snapshot, that activation waits for the store, and that disposal stops the
- * chain.
+ * value, that activation waits for the store, and that disposal stops the
+ * chains.
  */
 import { Context } from '@deepseek-ai/cordis'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
@@ -17,7 +17,9 @@ import { MemoryCredentials } from '../../../credentials/credentials/tests/memory
 import { DEFAULT_BASE_URL, readBalance } from '../src/account.ts'
 import { Config } from '../src/index.ts'
 import { apply, inject } from '../src/index.ts'
+import { DEFAULT_PRICING_URL } from '../src/published-prices.ts'
 import { DEFAULT_CURRENCY, NS } from '../src/settings.ts'
+import { PRICING_EN_HTML, PRICING_ZH_HTML } from './price-page-fixture.ts'
 
 /**
  * In-memory settings provider: the smallest real subclass of the Service
@@ -57,6 +59,12 @@ class MemorySettings extends SettingsProvider {
 /** Key resolution as the plugin performs it, over the environment alone here. */
 const fromEnv = (): Promise<string | undefined> => Promise.resolve(process.env['BILLING_TEST_KEY'])
 
+/** The balance the stubbed account endpoint answers with. */
+const BALANCE_BODY = {
+  is_available: true,
+  balance_infos: [{ currency: 'CNY', total_balance: '12.34', granted_balance: '0', topped_up_balance: '12.34' }],
+}
+
 const cleanups: Array<() => Promise<void> | void> = []
 
 afterEach(async () => {
@@ -72,12 +80,41 @@ function storedCache(settings: MemorySettings): unknown {
   return section?.['cache']
 }
 
+/** Resolve the stored published table out of the provider's document. */
+function storedOfficial(settings: MemorySettings): unknown {
+  const section = settings.doc[NS] as Record<string, unknown> | undefined
+  return section?.['official']
+}
+
+/**
+ * Answer both Host reads: the account endpoint and the published price page.
+ * @param reply - per-read overrides; each defaults to a successful answer.
+ * @returns the fetch stub, so a test can assert or change what was requested.
+ */
+function stubReads(reply: {
+  balance?: () => Promise<Response>
+  prices?: () => Promise<Response>
+} = {}) {
+  // The second parameter keeps the stub's call records shaped like the real
+  // fetch signature, so the balance assertion can read the request headers.
+  const fetchImpl = vi.fn((url: string, _init?: RequestInit): Promise<Response> => {
+    if (url.includes('/user/balance')) {
+      return reply.balance?.() ?? Promise.resolve(Response.json(BALANCE_BODY))
+    }
+    return reply.prices?.() ?? Promise.resolve(new Response(PRICING_ZH_HTML, { status: 200 }))
+  })
+  vi.stubGlobal('fetch', fetchImpl)
+  return fetchImpl
+}
+
 /** Values the Loader resolves from the plugin's own `Config` schema. */
 const RESOLVED_CONFIG = {
   apiKeyEnv: 'DEEPSEEK_API_KEY',
   baseURL: DEFAULT_BASE_URL,
   currency: DEFAULT_CURRENCY,
   refreshIntervalMs: 0,
+  pricingUrl: DEFAULT_PRICING_URL,
+  pricingRefreshIntervalMs: 0,
   requestTimeoutMs: 15_000,
 } satisfies Config
 
@@ -113,34 +150,42 @@ describe('configuration', () => {
       baseURL: DEFAULT_BASE_URL,
       currency: DEFAULT_CURRENCY,
       refreshIntervalMs: 300_000,
+      pricingUrl: DEFAULT_PRICING_URL,
+      pricingRefreshIntervalMs: 86_400_000,
       requestTimeoutMs: 15_000,
     })
   })
 })
 
 describe('namespace ownership', () => {
-  const balanceBody = {
-    is_available: true,
-    balance_infos: [{ currency: 'CNY', total_balance: '12.34', granted_balance: '0', topped_up_balance: '12.34' }],
-  }
-
-  it('registers the ui-billing namespace and caches the read', async () => {
-    const fetchImpl = vi.fn(() => Promise.resolve(Response.json(balanceBody)))
-    vi.stubGlobal('fetch', fetchImpl)
+  it('registers the ui-billing namespace and caches both reads', async () => {
+    const fetchImpl = stubReads()
     const { ctx, settings } = await mount()
 
     expect(ctx.settings.describe({ redactSecrets: true }).map(view => view.ns)).toContain(NS)
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe(`${DEFAULT_BASE_URL}/user/balance`)
-    expect((init.headers as Record<string, string>)['authorization']).toBe('Bearer key-under-test')
+    const urls = fetchImpl.mock.calls.map(call => call[0])
+    expect(urls).toContain(`${DEFAULT_BASE_URL}/user/balance`)
+    expect(urls).toContain(DEFAULT_PRICING_URL)
+    const balanceCall = fetchImpl.mock.calls.find(call => call[0].includes('/user/balance'))
+    expect((balanceCall?.[1] as RequestInit).headers).toMatchObject({ authorization: 'Bearer key-under-test' })
     await vi.waitFor(() => { expect(storedCache(settings)).toMatchObject({ total: 12.34, currency: 'CNY' }) })
-    expect(settings.doc[NS]).toMatchObject({ cacheError: null })
+    await vi.waitFor(() => {
+      expect(storedOfficial(settings)).toMatchObject({
+        currency: 'CNY',
+        source: DEFAULT_PRICING_URL,
+        models: {
+          'deepseek-flash': {
+            cacheHit: 0.04, cacheMiss: 2, output: 8,
+            offPeak: { cacheHit: 0.02, cacheMiss: 1, output: 4 },
+          },
+        },
+      })
+    })
+    expect(settings.doc[NS]).toMatchObject({ cacheError: null, officialError: null })
   })
 
   it('waits for the credential store before its first read', async () => {
-    const fetchImpl = vi.fn(() => Promise.resolve(Response.json(balanceBody)))
-    vi.stubGlobal('fetch', fetchImpl)
+    const fetchImpl = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
     const settings = new MemorySettings(ctx)
@@ -154,7 +199,7 @@ describe('namespace ownership', () => {
   })
 
   it('records the reason and keeps the previous snapshot when a read fails', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('nope', { status: 401 }))))
+    stubReads({ balance: () => Promise.resolve(new Response('nope', { status: 401 })) })
     const { settings } = await mount()
     await vi.waitFor(() => {
       expect(settings.doc[NS]).toMatchObject({ cacheError: { kind: 'http', status: 401 } })
@@ -162,10 +207,29 @@ describe('namespace ownership', () => {
     expect(settings.doc[NS]).not.toHaveProperty('cache')
   })
 
+  it('records why a price read produced no table and keeps the routes on the shipped snapshot', async () => {
+    stubReads({ prices: () => Promise.resolve(new Response('gone', { status: 500 })) })
+    const { settings } = await mount()
+    await vi.waitFor(() => {
+      expect(settings.doc[NS]).toMatchObject({ officialError: { kind: 'http', status: 500 } })
+    })
+    expect(settings.doc[NS]).not.toHaveProperty('official')
+  })
+
+  it('refuses a price page stated in another currency', async () => {
+    stubReads({ prices: () => Promise.resolve(new Response(PRICING_EN_HTML, { status: 200 })) })
+    const { settings } = await mount()
+    await vi.waitFor(() => {
+      expect(settings.doc[NS]).toMatchObject({
+        officialError: { kind: 'currency', found: 'USD', expected: 'CNY' },
+      })
+    })
+    expect(settings.doc[NS]).not.toHaveProperty('official')
+  })
+
   it('keeps a previously read balance across a failed refresh', async () => {
     vi.useFakeTimers()
-    const fetchImpl = vi.fn(() => Promise.resolve(Response.json(balanceBody)))
-    vi.stubGlobal('fetch', fetchImpl)
+    const fetchImpl = stubReads()
     const { settings } = await mount({ refreshIntervalMs: 500 })
     await vi.waitFor(() => { expect(storedCache(settings)).not.toBeUndefined() })
 
@@ -180,7 +244,7 @@ describe('namespace ownership', () => {
   })
 
   it('re-arms the refresh chain after each settlement when an interval is configured', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json(balanceBody))))
+    stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
     new MemorySettings(ctx)
@@ -196,9 +260,21 @@ describe('namespace ownership', () => {
     await vi.waitFor(() => { expect(timeout).toHaveBeenCalledWith(expect.any(Function), 1_000) })
   })
 
-  it('stops the chain on disposal', async () => {
-    const fetchImpl = vi.fn(() => Promise.resolve(Response.json(balanceBody)))
-    vi.stubGlobal('fetch', fetchImpl)
+  it('re-arms the price chain on its own interval', async () => {
+    stubReads()
+    const ctx = new Context()
+    await ctx.plugin(Timer)
+    new MemorySettings(ctx)
+    new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
+    const timeout = vi.spyOn(ctx.timer, 'timeout')
+    const fiber = ctx.plugin({ inject, apply }, { ...RESOLVED_CONFIG, pricingRefreshIntervalMs: 86_400_000 })
+    cleanups.push(async () => { await fiber.dispose() })
+    await fiber
+    await vi.waitFor(() => { expect(timeout).toHaveBeenCalledWith(expect.any(Function), 86_400_000) })
+  })
+
+  it('stops the chains on disposal', async () => {
+    const fetchImpl = stubReads()
     const { settings, fiber } = await mount()
     await vi.waitFor(() => { expect(storedCache(settings)).not.toBeUndefined() })
     await fiber.dispose()
@@ -209,7 +285,7 @@ describe('namespace ownership', () => {
 
   it('keeps a refused write from breaking the chain', async () => {
     const warn = vi.fn()
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json(balanceBody))))
+    stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
     const readOnly = new MemorySettings(ctx, { writable: false })
@@ -219,7 +295,7 @@ describe('namespace ownership', () => {
     cleanups.push(async () => { await fiber.dispose() })
     await fiber
     await vi.waitFor(() => { expect(warn).toHaveBeenCalled() })
-    expect(warn.mock.calls[0]?.[0]).toBe('ui-billing: balance cache write failed')
+    expect(warn.mock.calls[0]?.[0]).toBe('ui-billing: settings write failed')
     expect(readOnly.persisted).toEqual([])
   })
 })
