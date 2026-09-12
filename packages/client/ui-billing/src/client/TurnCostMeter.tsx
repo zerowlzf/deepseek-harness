@@ -16,6 +16,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import { DEFAULT_CURRENCY, routeKey, type BillingSettings, type ModelRate } from '../settings.ts'
 import type { BillingInjected } from './face.ts'
 import { LOCALE_NS } from './locales.ts'
+import { effectiveRates } from './official-rates.ts'
 import { turnCost, turnRouteUsage, turnRoutes, type TurnBuckets, type TurnRouteUsage } from './cost.ts'
 import { formatAmount } from './format.ts'
 import { IconCoinOutline16 } from './icons.tsx'
@@ -128,7 +129,7 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
   // pill carries none.
   if (usage === undefined) return null
 
-  const rates = settings?.models ?? {}
+  const rates = effectiveRates(settings?.models)
   const attempts = attemptsOf(nodes, turn)
   const rows = turnRouteUsage(usage, attempts)
   const cost = turnCost(rows, rates)

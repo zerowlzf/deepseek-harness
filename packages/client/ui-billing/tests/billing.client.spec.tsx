@@ -373,7 +373,32 @@ describe('turn cost row', () => {
         turn: 1,
         finalNode: {
           usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
-          provenance: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+          provenance: { provider: 'x', model: 'other' },
+        },
+      },
+    },
+    {
+      // A Turn that ran only on a route with no rate at all, official prices
+      // included: the unpriced arm needs a provider of its own.
+      key: 'turn-tail-3', kind: 'turn-tail', target: 'chat', anchorSeq: 7, location: { kind: 'session' },
+      visibility: 'visible', id: 'turn-tail-3',
+      data: {
+        turn: 3,
+        tokenUsage: {
+          uncachedInputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000,
+          cacheReadTokens: 0, cacheWriteTokens: 0,
+          routes: [{ provider: 'x', model: 'other' }],
+        },
+      },
+    },
+    {
+      key: 'assistant-3', kind: 'assistant-step', target: 'chat', anchorSeq: 6, location: { kind: 'session' },
+      visibility: 'visible', id: 'assistant-3',
+      data: {
+        turn: 3,
+        finalNode: {
+          usage: { inputTokens: 1_000_000, outputTokens: 0 },
+          provenance: { provider: 'x', model: 'other' },
         },
       },
     },
@@ -390,7 +415,7 @@ describe('turn cost row', () => {
         buckets: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
       },
       {
-        route: 'deepseek-official/deepseek-v4-pro',
+        route: 'x/other',
         buckets: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 0 },
       },
     ])
@@ -422,7 +447,7 @@ describe('turn cost row', () => {
     expect(rows?.textContent).toContain('¥18.00')
     // The second route carries no rates here, so its share is named as unpriced
     // instead of being folded into the total.
-    expect(rows?.textContent).toContain('deepseek-official/deepseek-v4-pro')
+    expect(rows?.textContent).toContain('x/other')
     expect(within(dialog).getAllByText('No rates configured').length).toBeGreaterThan(0)
     // The dialog's footnote names every route it priced, next to the share it
     // could not price.
@@ -454,11 +479,12 @@ describe('turn cost row', () => {
   })
 
   it('reports an unpriced turn and stays silent without accounting', () => {
+    // Turn 3 ran only on a route nothing prices, official defaults included.
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot())
     const { unmount } = render(
       <TurnCostMeter {...seats()}
-        turn={{ turn: 1 } as never} seq={1} openFile={() => {}}
+        turn={{ turn: 3 } as never} seq={1} openFile={() => {}}
         useChat={useChat as never}
         {...billingFace(stub)}
         t={t} />,
@@ -602,6 +628,50 @@ describe('settings page', () => {
     // The control reads as its opposite state while the card is open.
     fireEvent.click(screen.getByLabelText('Collapse rates for bai'))
     expect(screen.queryByLabelText('bai/glm-5.3-flash Cache hit')).toBeNull()
+  })
+
+  it('shows the published official price as the fallback a route is billed at', async () => {
+    // The official provider is configured by the deployment rather than by the
+    // user layer, and its model carries no stored rate: the card is priced by
+    // the published table, and the fields show it as the placeholder the user
+    // overrides.
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot())
+    const remote = {
+      llm: {
+        listProviders: () => Promise.resolve({ ok: true, value: [{ id: 'deepseek-official', name: 'DeepSeek' }] }),
+        listConfigurableProviders: () => Promise.resolve({
+          ok: true,
+          value: [{
+            provider: 'deepseek-official',
+            displayName: 'DeepSeek',
+            settingsNs: 'llm-deepseek',
+            settingsPath: ['providers', 'deepseek-official'],
+          }],
+        }),
+      },
+    }
+    const directory = {
+      ensure: () => Promise.resolve(),
+      getSnapshot: () => ({
+        view: {
+          namespaces: [{
+            ns: 'llm-deepseek',
+            value: { providers: { 'deepseek-official': { models: [{ id: 'deepseek-v4-flash' }] } } },
+          }],
+        },
+      }),
+    }
+    const face = billingFace(stub, contextDouble(remote, directory))
+    render(<BillingSection {...seats()} {...face} t={t} />)
+
+    await screen.findByText('DeepSeek')
+    expect(screen.getByText('1 priced')).toBeDefined()
+    fireEvent.click(screen.getByLabelText('Edit rates for deepseek-official'))
+    const hit = screen.getByLabelText('deepseek-official/deepseek-v4-flash Cache hit') as HTMLInputElement
+    expect(hit.value).toBe('')
+    expect(hit.placeholder).toBe('0.021')
+    expect(screen.getByText('default rate')).toBeDefined()
   })
 
   it('queues one path-addressed write per edited field', async () => {

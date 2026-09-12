@@ -17,6 +17,7 @@ import { ageOf, formatBalance } from './format.ts'
 import { currencyOf } from './CostMeter.tsx'
 import { IconWalletOutline16 } from './icons.tsx'
 import { LOCALE_NS, type BillingKey } from './locales.ts'
+import { defaultRateOf, effectiveRates } from './official-rates.ts'
 import css from './SettingsSection.module.css'
 
 /** One editable rate field. */
@@ -42,6 +43,12 @@ function rateText(rate: ModelRate | undefined, field: Field): string {
   if (rate === undefined) return ''
   const value = rate[field]
   return value === 0 ? '0' : String(value)
+}
+
+/** The published fallback one field shows as its placeholder. */
+function defaultText(route: string, field: Field): string {
+  const rate = defaultRateOf(route)
+  return rate === undefined ? '0' : rateText(rate, field)
 }
 
 /**
@@ -74,6 +81,10 @@ export function BillingSection({
   const [editing, setEditing] = useState<string | undefined>(undefined)
   const writable = useBilling(snapshot => snapshot.writable)
   const rates = settings?.models ?? {}
+  // What a route is actually billed at: the stored row, or the published
+  // official price it falls back to. The page edits the first and shows the
+  // second as the field's placeholder.
+  const priced = effectiveRates(settings?.models)
   const balance = settings?.cache ?? null
   const loaded = useBillingGroups(groups => groups)
   // Routes typed on this page that no directory declares and no stored row
@@ -231,7 +242,8 @@ export function BillingSection({
         {cards.map(([provider, models]) => {
           const group = groupOf(provider)
           const open = editing === provider
-          const priced = models.filter(model => rates[`${provider}${ROUTE_SEPARATOR}${model}`] !== undefined).length
+          const pricedCount = models.filter(model =>
+            priced[`${provider}${ROUTE_SEPARATOR}${model}`] !== undefined).length
           return (
             <div key={provider} className={css.card}>
               <header className={css.cardHead}>
@@ -244,7 +256,9 @@ export function BillingSection({
                     {group !== undefined && !group.modelsReadable
                       ? t('section.providerPathUnknown')
                       : t('section.modelCount', { count: models.length })}
-                    {priced > 0 && <span className={css.pricedBadge}>{t('section.pricedCount', { count: priced })}</span>}
+                    {pricedCount > 0 && (
+                      <span className={css.pricedBadge}>{t('section.pricedCount', { count: pricedCount })}</span>
+                    )}
                   </span>
                 </span>
                 <span className={css.actions}>
@@ -263,9 +277,19 @@ export function BillingSection({
                 <div className={css.models} data-billing-provider-models={provider}>
                   {models.map((model) => {
                     const route = `${provider}${ROUTE_SEPARATOR}${model}`
+                    const onDefault = rates[route] === undefined && defaultRateOf(route) !== undefined
                     return (
                       <div key={route} className={css.row} data-billing-rate-row={route}>
-                        <span className={css.modelName} title={model}>{model}</span>
+                        <span className={css.modelName} title={model}>
+                          {model}
+                          {/* The row is billed at the published price until the
+                              user stores one; the fields show it as a placeholder. */}
+                          {onDefault && (
+                            <span className={css.badge} title={t('section.defaultRateHint')}>
+                              {t('section.defaultRate')}
+                            </span>
+                          )}
+                        </span>
                         <div className={css.fields}>
                           {RATE_FIELDS.map(field => (
                             <label key={field} className={css.field}>
@@ -275,7 +299,7 @@ export function BillingSection({
                                 type="text"
                                 inputMode="decimal"
                                 value={valueOf(route, field)}
-                                placeholder="0"
+                                placeholder={defaultText(route, field)}
                                 disabled={!writable}
                                 aria-label={`${route} ${t(FIELD_KEYS[field])}`}
                                 onChange={(event) => {
