@@ -420,7 +420,12 @@ export interface Config {
   refreshIntervalMs: number
   /** Published price page rates are read from. */
   pricingUrl: string
-  /** Delay between price reads; `0` reads once at startup and schedules no further read. */
+  /**
+   * Delay between automatic price reads. A published price list moves rarely,
+   * so the wait is long and a restart inside it does not re-read a fresh table;
+   * `0` reads once at startup and schedules no further read. The page can ask
+   * for a read at any time whatever this value is.
+   */
   pricingRefreshIntervalMs: number
   /** Whole-request deadline for one read. */
   requestTimeoutMs: number

@@ -136,6 +136,19 @@ export function apply(ctx: ClientContext): void {
     await scope.mutate([{ op: 'unset', path: ['models', route] }])
   }
 
+  /**
+   * Ask the Host to read the published price page now.
+   *
+   * The automatic read is long-spaced, so this is how the page asks for one
+   * sooner: the request is a settings write because that document is the one
+   * store both halves share. The Host clears the field when the read settles,
+   * which is what the page reads as that read being in flight.
+   * @returns settlement after the namespace records the request.
+   */
+  const refreshPrices = async (): Promise<void> => {
+    await scope.mutate([{ op: 'set', path: ['officialRequest'], value: Date.now() }])
+  }
+
   const injected = (): BillingInjected => ({
     hooks: {
       billing: {
@@ -150,6 +163,7 @@ export function apply(ctx: ClientContext): void {
     routeGroups,
     saveRate,
     clearRate,
+    refreshPrices,
   })
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
