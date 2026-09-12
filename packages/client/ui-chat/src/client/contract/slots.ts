@@ -210,6 +210,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.chat.turnTail': { kind: 'chain'; scope: 'session'; owner: TurnTailOwnerProps }
     /**
+     * Trailing figures inside a completed Turn's own action row, after the
+     * shipped Turn-usage and Turn-time pills and ahead of the message clock.
+     * Declared by this package and rendered by `TurnTailNodeView` itself, so a
+     * contribution joins the row's stat-pill cluster; a list, not the chain
+     * above, because a Turn that also produced files still has figures to show.
+     * The row is the Turn's own; a contribution owns only its own figures.
+     */
+    'conversation.chat.turn-stats': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
+    /**
      * Trailing figures inside the shipped composer stats row, after the
      * turn/step and token pills and behind a divider. Declared by this package
      * and rendered by `StatsPills` itself, so a contribution shares that row's

@@ -335,10 +335,10 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, ren
   // billing (e.g. every request failed) shows its counts without a usage pill.
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
-  // The divider belongs to the contribution that follows it and to nothing
-  // else, so layout decides it: `renderSlot` always renders its own anchor, so
-  // no render-time probe can tell an occupied hole from an empty one, while a
-  // sibling selector can. See `.trailingRule` in the module CSS.
+  // The hole takes part in this row's own flex layout, so a contribution sits
+  // in the row's own gap beside the pills. `renderSlot` mounts its own anchor
+  // even with no entries, and that anchor is `display: contents`, so an empty
+  // hole costs the row nothing.
   const trailing = renderSlot('conversation.composer.stats', {})
   if (stats.steps === 0 && !hasTokens) return null
   // data-composer-stats: InputBar's `.root:has([data-composer-stats])` rule
@@ -365,12 +365,7 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, ren
           }}
         />
       )}
-      {trailing !== null && (
-        <>
-          <span className={css.trailingRule} aria-hidden />
-          <span className={css.trailingProbe}>{trailing}</span>
-        </>
-      )}
+      {trailing}
     </div>
   )
 })

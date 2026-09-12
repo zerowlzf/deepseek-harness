@@ -329,7 +329,7 @@ describe('turn cost row', () => {
       },
     },
     {
-      key: 'assistant-1', kind: 'assistant', target: 'chat', anchorSeq: 2, location: { kind: 'session' },
+      key: 'assistant-1', kind: 'assistant-step', target: 'chat', anchorSeq: 2, location: { kind: 'session' },
       visibility: 'visible', id: 'assistant-1',
       data: {
         turn: 1,
@@ -339,22 +339,36 @@ describe('turn cost row', () => {
         },
       },
     },
+    {
+      // The same Turn's second attempt on another route: the window's own
+      // evidence for what a turn that switched models was billed.
+      key: 'assistant-2', kind: 'assistant-step', target: 'chat', anchorSeq: 4, location: { kind: 'session' },
+      visibility: 'visible', id: 'assistant-2',
+      data: {
+        turn: 1,
+        finalNode: {
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
+          provenance: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+        },
+      },
+    },
   ] as unknown as readonly ChatConversationViewNode[]
 
   function useChat<T>(select: (snapshot: { nodes: { values(): readonly ChatConversationViewNode[] } }) => T): T {
     return select({ nodes: { values: () => nodes } })
   }
 
-  /** Projection seat for the turns whose payload the loaded window lost. */
-  const noProjection = ((key: string): unknown => key === 'tokenUsage'
-    ? { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
-    : undefined) as never
-
   it('reads each attempt of the turn', () => {
-    expect(attemptsOf(nodes, 1)).toEqual([{
-      route: 'bai/glm-5.3-flash',
-      buckets: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    }])
+    expect(attemptsOf(nodes, 1)).toEqual([
+      {
+        route: 'bai/glm-5.3-flash',
+        buckets: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      },
+      {
+        route: 'deepseek-official/deepseek-v4-pro',
+        buckets: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 0 },
+      },
+    ])
     expect(attemptsOf(nodes, 2)).toEqual([])
   })
 
@@ -372,21 +386,30 @@ describe('turn cost row', () => {
       <TurnCostMeter
         turn={{ turn: 1 } as never}
         useChat={useChat as never}
-        useProjection={noProjection}
         {...billingFace(stub)}
         t={t}
       />,
     )
-    expect(screen.getByText('¥18.00 this turn')).toBeDefined()
-    fireEvent.click(screen.getByLabelText('¥18.00 this turn'))
+    expect(screen.getByText('Cost ¥18.00')).toBeDefined()
+    fireEvent.click(screen.getByLabelText('Cost ¥18.00'))
     const dialog = screen.getByRole('dialog', { name: 'Turn cost' })
     const rows = dialog.querySelector('[data-billing-turn-routes]')
     expect(rows?.textContent).toContain('bai/glm-5.3-flash')
     expect(rows?.textContent).toContain('¥18.00')
-    expect(within(dialog).getByText('bai/glm-5.3-flash: 0.15 / 4.5 / 13.5')).toBeDefined()
+    // The second route carries no rates here, so its share is named as unpriced
+    // instead of being folded into the total.
+    expect(rows?.textContent).toContain('deepseek-official/deepseek-v4-pro')
+    expect(within(dialog).getAllByText('No rates configured').length).toBeGreaterThan(0)
+    // The dialog's footnote names every route it priced, next to the share it
+    // could not price.
+    expect(within(dialog).getByText(/bai\/glm-5\.3-flash: 0\.15 \/ 4\.5 \/ 13\.5/)).toBeDefined()
   })
 
-  it('prices a turn whose payload the loaded window lost', () => {
+  it('shows no figure for a turn whose own accounting is incomplete', () => {
+    // The session projection is a session-wide running total, so it can never
+    // stand in for one turn: a turn whose token accounting is absent — its
+    // events paged out, an attempt that never settled — reads as no figure,
+    // exactly as its own Turn-usage pill reads.
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot({
       value: {
@@ -396,21 +419,15 @@ describe('turn cost row', () => {
         cacheError: null,
       },
     }))
-    const projected = ((key: string): unknown => key === 'tokenUsage'
-      ? { uncachedInputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
-      : key === 'modelSelection'
-        ? { lastUsed: null, next: { provider: 'bai', model: 'glm-5.3-flash' } }
-        : undefined) as never
-    render(
+    const view = render(
       <TurnCostMeter
         turn={{ turn: 9 } as never}
         useChat={useChat as never}
-        useProjection={projected}
         {...billingFace(stub)}
         t={t}
       />,
     )
-    expect(screen.getByText('¥4.50 this turn')).toBeDefined()
+    expect(view.container.innerHTML).toBe('')
   })
 
   it('reports an unpriced turn and stays silent without accounting', () => {
@@ -420,13 +437,12 @@ describe('turn cost row', () => {
       <TurnCostMeter
         turn={{ turn: 1 } as never}
         useChat={useChat as never}
-        useProjection={noProjection}
         {...billingFace(stub)}
         t={t}
       />,
     )
-    expect(screen.getByText('- this turn')).toBeDefined()
-    fireEvent.click(screen.getByLabelText('- this turn'))
+    expect(screen.getByText('Cost -')).toBeDefined()
+    fireEvent.click(screen.getByLabelText('Cost -'))
     expect(screen.getByText('No rates configured; this turn is not billed')).toBeDefined()
     unmount()
 
@@ -434,7 +450,6 @@ describe('turn cost row', () => {
       <TurnCostMeter
         turn={{ turn: 9 } as never}
         useChat={useChat as never}
-        useProjection={noProjection}
         {...billingFace(stub)}
         t={t}
       />,
@@ -680,7 +695,7 @@ describe('plugin registration', () => {
       children: {
         'settings.section': { kind: 'list', scope: 'root' },
         'conversation.composer.stats': { kind: 'list', scope: 'session' },
-        'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
+        'conversation.chat.turn-stats': { kind: 'list', scope: 'session' },
       },
     } as never, () => null)
     await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
@@ -689,17 +704,14 @@ describe('plugin registration', () => {
     await fiber.await()
     expect(ctx.slots.entries('settings.section')).toHaveLength(1)
     expect(ctx.slots.entries('conversation.composer.stats')).toHaveLength(1)
-    expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
+    expect(ctx.slots.entries('conversation.chat.turn-stats')).toHaveLength(1)
     expect(ctx.slots.entries('settings.section')[0] !== undefined).toBe(true)
     expect(resolveSlotLabel(ctx.slots.entries('settings.section')[0]?.options.label)).toBe('Billing')
-
-    const select = ctx.slots.entries('conversation.chat.turnTail')[0]?.select
-    expect(select?.({ turn: { turn: 4 }, seq: 1, openFile: () => {} } as never)).toEqual({ turn: 4 })
 
     await fiber.dispose()
     expect(ctx.slots.entries('settings.section')).toHaveLength(0)
     expect(ctx.slots.entries('conversation.composer.stats')).toHaveLength(0)
-    expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
+    expect(ctx.slots.entries('conversation.chat.turn-stats')).toHaveLength(0)
   })
 })
 
