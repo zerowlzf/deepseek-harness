@@ -37,11 +37,11 @@ kind: "package-reference"
 | 缓存未命中 | 未缓存的提示词 tokens，含缓存写入。 |
 | 输出 | 生成的 tokens，含推理 tokens。 |
 
-单价的币种与余额一致，单位为百万 tokens。高峰一组就是这条路由自己的价，在提供方的空闲时段之外一律按它计费；空闲一组是第二个价格档，三个字段全部留空表示这条路由全天同价，也就是只公布一个价格的提供方的情形。DeepSeek 确实公布这样一个时段——高峰为北京时间周一至周五 9:00–12:00、14:00–18:00，空闲价为高峰价的一半——因此它的路由自带两档，页面会在卡片上方说明当前生效的是哪一档。
+单价的币种与余额一致，单位为百万 tokens。只有官方 DeepSeek 提供方按时段计价，也只有它的卡片给出第二组字段：高峰一组是这条路由自己的价，空闲一组是它在高峰时段之外的价。其它提供方的卡片只给一组三个字段，因为只公布一个价格的提供方全天同价；这类路由也可以按需加上第二档（「加入空闲时段」）：schema、费用折算与 settings 文档本来就为每条路由都带着第二档，已经存有第二档的路由会直接显示两档。DeepSeek 公布的时段是北京时间周一至周五 9:00–12:00、14:00–18:00，时段外为半价，因此官方卡片会在字段上方说明当前生效的是哪一档。
 
 官方 DeepSeek 提供方的路由自带公布价默认值，因此官方会话开箱即可读出费用：该路由上存过的一行会覆盖一切公布价，走默认值的行会把公布数字显示为输入框的占位符并带一个「默认单价」标记，清除该行即回到公布价。其余没有存量单价的路由不进入任何合计：胶囊显示短横线，对话框点名该路由，而不是显示一个当前配置无法支撑的数字。单价存放在命名空间的 `models` 记录中，键为 `provider/model`，因此手工编辑 settings 文档与页面操作是同一份存储。
 
-Host 会按 `pricingUrl`（默认是官方中文文档页）每天刷新一次公布价（`pricingRefreshIntervalMs`；`0` 表示只在启动时读一次）。DeepSeek 没有价格接口——它的 API 提供补全、文件、一份只有 id 的模型列表和余额——因此那张页面表格是价格唯一可机读的表述。读到的表格无法识别、或它陈述的币种与 `currency` 不一致时，都会记成结构化失败：出厂快照继续给官方路由计价，计费页说明发生了什么。
+Host 会按 `pricingUrl`（默认是官方中文文档页）每天刷新一次公布价（`pricingRefreshIntervalMs`；`0` 表示只在启动时读一次），取页面走的是本部署自己的网页读取能力（`ctx.web`），而不是本包自己发起的请求；没有挂载该能力的部署会记为「没有可读的页面」。DeepSeek 没有价格接口——它的 API 提供补全、文件、一份只有 id 的模型列表和余额——因此那张页面表格是价格唯一可机读的表述。读到的表格无法识别、或它陈述的币种与 `currency` 不一致时，都会记成结构化失败：出厂快照继续给官方路由计价，计费页说明发生了什么。
 
 ### 单价编辑
 
@@ -102,7 +102,7 @@ official:
 officialError: null
 ```
 
-`models` 记录是用户配置，Host 只读取它来作答。`cache`、`official` 与两个错误字段属于 Host，各自由一条刷新链写入。余额一侧：Host 每次读取时解析 API key（先走 `credentials` seam，再走进程环境），对配置的基址调用 `GET /user/balance`，并把结果写回命名空间。`credentials` 是必需注入，因此首次读取会等待凭据文档，而不会把运维者确实存过的 key 报成缺失。余额读取接收一个 key 解析器而不是 context，凭据 seam 因此归插件体所有，读取保持为一次不触碰任何服务的调用。任一侧读取失败都会保留上一份取值，并记录**结构化原因**——没有 key、HTTP 状态、传输失败、响应无法解析，价格一侧还有「页面按另一种币种计价」——由浏览器用自己的语言陈述，无法翻译的技术细节作为第二句附在后面。两条链各自在结算后按自己的间隔重新排期，并随插件 fiber 一起停止。
+`models` 记录是用户配置，Host 只读取它来作答。`cache`、`official` 与两个错误字段属于 Host，各自由一条刷新链写入。余额一侧：Host 每次读取时解析 API key（先走 `credentials` seam，再走进程环境），对配置的基址调用 `GET /user/balance`，并把结果写回命名空间。`credentials` 是必需注入，因此首次读取会等待凭据文档，而不会把运维者确实存过的 key 报成缺失。余额读取接收一个 key 解析器而不是 context，凭据 seam 因此归插件体所有，读取保持为一次不触碰任何服务的调用；价格读取同样接收一个取页函数，它由可选的 `web` 服务解析而来，解析器因此是对 markup 的纯函数。任一侧读取失败都会保留上一份取值，并记录**结构化原因**——没有 key、HTTP 状态、传输失败、响应无法解析、取页路径截断了正文、部署没有挂载网页读取能力，价格一侧还有「页面按另一种币种计价」——由浏览器用自己的语言陈述，无法翻译的技术细节作为第二句附在后面。两条链各自在结算后按自己的间隔重新排期，并随插件 fiber 一起停止。
 
 ### 费用折叠
 
@@ -129,6 +129,7 @@ officialError: null
 
 - [dsh-token-meter](../../llm/token-meter/README.zh.md) — 本包所累积的 `tokenUsage` 投影。
 - [dsh-settings](../../settings/settings/README.zh.md) — Host 半边注册、浏览器半边编辑的命名空间 seam。
+- [dsh-web](../../web/web/README.zh.md) — Host 读取公布价页面所用的网页读取能力。
 - [ui-settings](../ui-settings/README.zh.md) — 设置外壳，以及本页绑定的命名空间 scope。
 - [ui-chat](../ui-chat/README.zh.md) — 本包所扩展的胶囊、对话框与 turn-tail 链。
 
@@ -171,7 +172,7 @@ These limits define the current cost display. They are current package constrain
 - The per-turn node data lives only in the materialized Chat node store, not in the legacy compatibility slice the shipped stats row reads.
 - ui-chat's completed-Turn extension above the action row is a chain that elects one entry, so a contribution there is dropped for every Turn the shipped produced-files entry claims; the cost figure lives in the row's own list hole (`conversation.chat.turn-stats`) instead. The per-attempt node kind is `assistant-step`, and its `finalNode.provenance` and `finalNode.time` are the route and the moment that attempt was billed on.
 - 价格表夹具就是线上文档页实际提供的那张表格，逐字录下，因此 `parsePricePage` 是针对它真正会遇到的行合并、脚注标记与单位后缀来规定的。默认用中文版，因为它陈述的币种就是本包默认币种；英文版在样张里充当「币种不符被拒」的用例。
-- `BillingTranslate` stays declared locally while the props derive from `PropsLocale`: the framework's seat over a merged `LocaleNamespaceMap` accepts this dictionary's keys plus the shared common ones, which is assignable to the narrower local alias but not the reverse. The two-faces-in-one-package layout means `src/settings.ts` is compiled by the Host leaf and consumed by the Client leaf through the project reference.
+- `BillingTranslate` 保持本地声明，而 props 从 `PropsLocale` 派生：框架在合并后的 `LocaleNamespaceMap` 上给出的座位同时接受本字典的键与共享的通用键，它可以赋给更窄的本地别名，反向则不行。一包两 face 的布局让 `src/settings.ts` 在两个 leaf 中都参与编译——Client leaf 把它列进 `include`——因为 Client 配置不允许进入 split 项目的 Host leaf。
 - settings 命名空间（`ui-billing`）与文案字典（`billing`）分开命名：两者共用一个标识符会把 scope 绑到字典上，于是 Host 明明在提供正确取值，而每个界面都渲染自己的「不可用」状态。
 
 </details>

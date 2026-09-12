@@ -4,18 +4,31 @@
  * DeepSeek publishes no price endpoint — its API serves completions, files, a
  * model list of ids, and the account balance, and nothing that answers what a
  * token costs — so the only machine-readable statement of the prices is the
- * table on the documentation page. This module reads that page and turns its
- * table into rates; anything it cannot recognise produces a structured failure
- * and leaves the shipped snapshot in charge, so a redesigned page costs an
- * outdated default rather than a wrong bill.
+ * table on the documentation page. This module reads that page through the
+ * Host's own web capability and turns its table into rates; anything it cannot
+ * recognise produces a structured failure and leaves the shipped snapshot in
+ * charge, so a redesigned page costs an outdated default rather than a wrong
+ * bill.
  *
  * @module @deepseek-ai/dsh-client-ui-billing/published-prices
  */
 
+import type { WebFetchResult } from '@deepseek-ai/dsh-web'
 import type { PriceWindow, ModelRate, PriceFailure, RateBand } from './settings.ts'
 
 /** Published price page in the currency this package prices in by default. */
 export const DEFAULT_PRICING_URL = 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/'
+
+/**
+ * Retrieve one page.
+ *
+ * The plugin body owns this because the Host's web capability is a service it
+ * resolves from its own context; a read only needs the page. The capability
+ * throws its own structured error when no provider is usable and answers a
+ * non-2xx response descriptively, which is why this seam returns the result
+ * rather than a status alone.
+ */
+export type PageFetcher = (url: string, signal: AbortSignal) => Promise<WebFetchResult>
 
 /** The rates one page stated, and the currency it stated them in. */
 export interface PublishedPrices {
@@ -214,28 +227,29 @@ function bandOf(collected: ReadonlyMap<string, Figure>, model: string, window: P
 /**
  * Read one published price page.
  * @param request - page, expected currency, and deadline.
+ * @param fetchPage - retrieves the page, or undefined when the deployment mounts no web capability.
  * @returns the published rates or the structured reason none were read.
  */
-export async function readPrices(request: PriceReadRequest): Promise<PriceRead> {
-  let response: Response
+export async function readPrices(
+  request: PriceReadRequest,
+  fetchPage: PageFetcher | undefined,
+): Promise<PriceRead> {
+  if (fetchPage === undefined) return { ok: false, failure: { kind: 'noWeb' } }
+  let page: WebFetchResult
   try {
-    response = await fetch(request.url, {
-      headers: { accept: 'text/html' },
-      signal: AbortSignal.timeout(request.timeoutMs),
-    })
+    page = await fetchPage(request.url, AbortSignal.timeout(request.timeoutMs))
   } catch (error: unknown) {
     return { ok: false, failure: { kind: 'network', detail: messageOf(error) } }
   }
-  if (!response.ok) {
-    return { ok: false, failure: { kind: 'http', status: response.status } }
+  if (page.statusCode !== 200) {
+    return { ok: false, failure: { kind: 'http', status: page.statusCode } }
   }
-  let html: string
-  try {
-    html = await response.text()
-  } catch (error: unknown) {
-    return { ok: false, failure: { kind: 'payload', detail: messageOf(error) } }
+  // A body the capability capped can hold a table with its price rows cut off,
+  // which reads as a page that published none of them.
+  if (page.truncated) {
+    return { ok: false, failure: { kind: 'payload', detail: 'the page was truncated' } }
   }
-  const prices = parsePricePage(html)
+  const prices = parsePricePage(page.body.content)
   if (prices === undefined) {
     return { ok: false, failure: { kind: 'payload', detail: 'no price table on the page' } }
   }

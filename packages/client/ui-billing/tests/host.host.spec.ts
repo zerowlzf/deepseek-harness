@@ -1,16 +1,19 @@
 /**
  * ui-billing Host half: the namespace registration and the two refresh chains.
- * The settings provider is a real in-memory subclass of the seam and the
- * credential store is the credentials package's own in-memory provider, so what
- * is asserted here is this package's own contract — the namespace it registers
- * under, what a settled read writes back, that a failed read keeps the previous
- * value, that activation waits for the store, and that disposal stops the
- * chains.
+ * The settings provider is a real in-memory subclass of the seam, the credential
+ * store is the credentials package's own in-memory provider, and the web
+ * capability is the real service Definition with one stub retrieval provider, so
+ * what is asserted here is this package's own contract — the namespace it
+ * registers under, what a settled read writes back, that a failed read keeps the
+ * previous value, that activation waits for the store, and that disposal stops
+ * the chains.
  */
 import { Context } from '@deepseek-ai/cordis'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { WebRuntime } from '@deepseek-ai/dsh-web'
+import type { WebFetchProvider, WebFetchRequest, WebFetchResult } from '@deepseek-ai/dsh-web'
 import Schema from '@deepseek-ai/schemastery'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
@@ -86,25 +89,53 @@ function storedOfficial(settings: MemorySettings): unknown {
   return section?.['official']
 }
 
-/**
- * Answer both Host reads: the account endpoint and the published price page.
- * @param reply - per-read overrides; each defaults to a successful answer.
- * @returns the fetch stub, so a test can assert or change what was requested.
- */
-function stubReads(reply: {
+/** One published page, defaulting to the table the recorded live page serves. */
+function pageOf(options: { content?: string; statusCode?: number; truncated?: boolean } = {}): WebFetchResult {
+  return {
+    url: DEFAULT_PRICING_URL,
+    statusCode: options.statusCode ?? 200,
+    body: { kind: 'html', content: options.content ?? PRICING_ZH_HTML },
+    truncated: options.truncated ?? false,
+  }
+}
+
+/** What one test's two reads answer, and whether the deployment has a web capability at all. */
+interface Answers {
+  /** Account endpoint answer; defaults to a funded account. */
   balance?: () => Promise<Response>
-  prices?: () => Promise<Response>
-} = {}) {
+  /** Published page answer; defaults to the recorded Chinese table. */
+  prices?: () => Promise<WebFetchResult>
+  /** Mount no web capability, as a deployment that mounts none. */
+  web?: boolean
+}
+
+/**
+ * Answer both Host reads, each through the path its read uses: the account
+ * endpoint through the global fetch this package's own request goes out on, the
+ * published page through the web capability's registered provider.
+ * @param answers - per-read overrides; each defaults to a successful answer.
+ * @returns both stubs, so a test can assert what each was asked for.
+ */
+function stubReads(answers: Answers = {}) {
   // The second parameter keeps the stub's call records shaped like the real
   // fetch signature, so the balance assertion can read the request headers.
   const fetchImpl = vi.fn((url: string, _init?: RequestInit): Promise<Response> => {
-    if (url.includes('/user/balance')) {
-      return reply.balance?.() ?? Promise.resolve(Response.json(BALANCE_BODY))
+    if (!url.includes('/user/balance')) {
+      // The published page is read through `ctx.web`; a request here would mean
+      // this package still retrieves the page itself.
+      return Promise.reject(new Error(`unexpected request: ${url}`))
     }
-    return reply.prices?.() ?? Promise.resolve(new Response(PRICING_ZH_HTML, { status: 200 }))
+    return answers.balance?.() ?? Promise.resolve(Response.json(BALANCE_BODY))
   })
   vi.stubGlobal('fetch', fetchImpl)
-  return fetchImpl
+  const page = vi.fn((_request: WebFetchRequest, _signal?: AbortSignal): Promise<WebFetchResult> =>
+    answers.prices?.() ?? Promise.resolve(pageOf()))
+  return { fetchImpl, page }
+}
+
+/** Mount the web capability with one provider standing in for the deployment's retrieval backend. */
+function mountWeb(ctx: Context, fetchPage: WebFetchProvider['fetch']): void {
+  new WebRuntime(ctx).registerFetchProvider({ id: 'stub-fetch', available: () => true, fetch: fetchPage })
 }
 
 /** Values the Loader resolves from the plugin's own `Config` schema. */
@@ -119,14 +150,18 @@ const RESOLVED_CONFIG = {
 } satisfies Config
 
 /**
- * Mount the Host half over the in-memory provider.
+ * Mount the Host half over the in-memory provider, beside the web capability a
+ * deployment mounts.
  * @param config - plugin configuration overrides.
- * @returns the context, the provider holding the writes, and the plugin fiber.
+ * @param answers - what each read answers, and whether a web capability exists.
+ * @returns the context, the provider holding the writes, both read stubs, and the plugin fiber.
  */
-async function mount(config: Partial<Config> = {}): Promise<{
+async function mount(config: Partial<Config> = {}, answers: Answers = {}): Promise<{
   ctx: Context
   settings: MemorySettings
   fiber: { dispose: () => Promise<void> }
+  fetchImpl: ReturnType<typeof stubReads>['fetchImpl']
+  page: ReturnType<typeof stubReads>['page']
 }> {
   const ctx = new Context()
   // The real timer service mixes `timeout` onto the context, which is the API
@@ -134,10 +169,12 @@ async function mount(config: Partial<Config> = {}): Promise<{
   await ctx.plugin(Timer)
   const settings = new MemorySettings(ctx)
   new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
+  const { fetchImpl, page } = stubReads(answers)
+  if (answers.web !== false) mountWeb(ctx, page)
   const fiber = ctx.plugin({ inject, apply }, { ...RESOLVED_CONFIG, ...config })
   cleanups.push(async () => { await fiber.dispose() })
   await fiber
-  return { ctx, settings, fiber }
+  return { ctx, settings, fiber, fetchImpl, page }
 }
 
 describe('configuration', () => {
@@ -159,15 +196,15 @@ describe('configuration', () => {
 
 describe('namespace ownership', () => {
   it('registers the ui-billing namespace and caches both reads', async () => {
-    const fetchImpl = stubReads()
-    const { ctx, settings } = await mount()
+    const { ctx, settings, fetchImpl, page } = await mount()
 
     expect(ctx.settings.describe({ redactSecrets: true }).map(view => view.ns)).toContain(NS)
-    const urls = fetchImpl.mock.calls.map(call => call[0])
-    expect(urls).toContain(`${DEFAULT_BASE_URL}/user/balance`)
-    expect(urls).toContain(DEFAULT_PRICING_URL)
-    const balanceCall = fetchImpl.mock.calls.find(call => call[0].includes('/user/balance'))
-    expect((balanceCall?.[1] as RequestInit).headers).toMatchObject({ authorization: 'Bearer key-under-test' })
+    // The balance is this package's own request; the page goes through the web
+    // capability, so no page request appears on the global fetch.
+    expect(fetchImpl.mock.calls.map(call => call[0])).toEqual([`${DEFAULT_BASE_URL}/user/balance`])
+    expect(page.mock.calls.map(call => call[0])).toEqual([{ url: DEFAULT_PRICING_URL }])
+    expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).headers)
+      .toMatchObject({ authorization: 'Bearer key-under-test' })
     await vi.waitFor(() => { expect(storedCache(settings)).toMatchObject({ total: 12.34, currency: 'CNY' }) })
     await vi.waitFor(() => {
       expect(storedOfficial(settings)).toMatchObject({
@@ -185,10 +222,11 @@ describe('namespace ownership', () => {
   })
 
   it('waits for the credential store before its first read', async () => {
-    const fetchImpl = stubReads()
+    const { fetchImpl, page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
     const settings = new MemorySettings(ctx)
+    mountWeb(ctx, page)
     const fiber = ctx.plugin({ inject, apply }, RESOLVED_CONFIG)
     cleanups.push(async () => { await fiber.dispose() })
     // The mount is pending on the missing service, so no read has run yet.
@@ -199,8 +237,7 @@ describe('namespace ownership', () => {
   })
 
   it('records the reason and keeps the previous snapshot when a read fails', async () => {
-    stubReads({ balance: () => Promise.resolve(new Response('nope', { status: 401 })) })
-    const { settings } = await mount()
+    const { settings } = await mount({}, { balance: () => Promise.resolve(new Response('nope', { status: 401 })) })
     await vi.waitFor(() => {
       expect(settings.doc[NS]).toMatchObject({ cacheError: { kind: 'http', status: 401 } })
     })
@@ -208,17 +245,26 @@ describe('namespace ownership', () => {
   })
 
   it('records why a price read produced no table and keeps the routes on the shipped snapshot', async () => {
-    stubReads({ prices: () => Promise.resolve(new Response('gone', { status: 500 })) })
-    const { settings } = await mount()
+    const { settings } = await mount({}, { prices: () => Promise.resolve(pageOf({ statusCode: 500 })) })
     await vi.waitFor(() => {
       expect(settings.doc[NS]).toMatchObject({ officialError: { kind: 'http', status: 500 } })
     })
     expect(settings.doc[NS]).not.toHaveProperty('official')
   })
 
+  it('records that no page could be read when the deployment mounts no web capability', async () => {
+    const { settings } = await mount({}, { web: false })
+    await vi.waitFor(() => {
+      expect(settings.doc[NS]).toMatchObject({ officialError: { kind: 'noWeb' } })
+    })
+    // The balance read is this package's own request, so mounting no web
+    // capability leaves it untouched.
+    await vi.waitFor(() => { expect(storedCache(settings)).toMatchObject({ total: 12.34 }) })
+    expect(settings.doc[NS]).not.toHaveProperty('official')
+  })
+
   it('refuses a price page stated in another currency', async () => {
-    stubReads({ prices: () => Promise.resolve(new Response(PRICING_EN_HTML, { status: 200 })) })
-    const { settings } = await mount()
+    const { settings } = await mount({}, { prices: () => Promise.resolve(pageOf({ content: PRICING_EN_HTML })) })
     await vi.waitFor(() => {
       expect(settings.doc[NS]).toMatchObject({
         officialError: { kind: 'currency', found: 'USD', expected: 'CNY' },
@@ -229,8 +275,7 @@ describe('namespace ownership', () => {
 
   it('keeps a previously read balance across a failed refresh', async () => {
     vi.useFakeTimers()
-    const fetchImpl = stubReads()
-    const { settings } = await mount({ refreshIntervalMs: 500 })
+    const { settings, fetchImpl } = await mount({ refreshIntervalMs: 500 })
     await vi.waitFor(() => { expect(storedCache(settings)).not.toBeUndefined() })
 
     // The next tick fails; the settled amount stays and the reason is recorded.
@@ -244,11 +289,12 @@ describe('namespace ownership', () => {
   })
 
   it('re-arms the refresh chain after each settlement when an interval is configured', async () => {
-    stubReads()
+    const { page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
     new MemorySettings(ctx)
     new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
+    mountWeb(ctx, page)
     // The chain arms through the timer service's own `timeout`, whose
     // fiber-owned effect belongs to that service.
     const timeout = vi.spyOn(ctx.timer, 'timeout')
@@ -261,11 +307,12 @@ describe('namespace ownership', () => {
   })
 
   it('re-arms the price chain on its own interval', async () => {
-    stubReads()
+    const { page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
     new MemorySettings(ctx)
     new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
+    mountWeb(ctx, page)
     const timeout = vi.spyOn(ctx.timer, 'timeout')
     const fiber = ctx.plugin({ inject, apply }, { ...RESOLVED_CONFIG, pricingRefreshIntervalMs: 86_400_000 })
     cleanups.push(async () => { await fiber.dispose() })
@@ -274,22 +321,24 @@ describe('namespace ownership', () => {
   })
 
   it('stops the chains on disposal', async () => {
-    const fetchImpl = stubReads()
-    const { settings, fiber } = await mount()
+    const { settings, fiber, fetchImpl, page } = await mount()
     await vi.waitFor(() => { expect(storedCache(settings)).not.toBeUndefined() })
     await fiber.dispose()
-    const calls = fetchImpl.mock.calls.length
+    const balances = fetchImpl.mock.calls.length
+    const pages = page.mock.calls.length
     await new Promise((resolve) => { setTimeout(resolve, 5) })
-    expect(fetchImpl.mock.calls).toHaveLength(calls)
+    expect(fetchImpl.mock.calls).toHaveLength(balances)
+    expect(page.mock.calls).toHaveLength(pages)
   })
 
   it('keeps a refused write from breaking the chain', async () => {
     const warn = vi.fn()
-    stubReads()
+    const { page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
     const readOnly = new MemorySettings(ctx, { writable: false })
     new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
+    mountWeb(ctx, page)
     ctx.logger.warn = warn as never
     const fiber = ctx.plugin({ inject, apply }, RESOLVED_CONFIG)
     cleanups.push(async () => { await fiber.dispose() })

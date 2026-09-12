@@ -5,6 +5,7 @@
  * markup it will actually meet rather than an approximation of it.
  */
 import { describe, expect, it, vi } from 'vitest'
+import type { WebFetchResult } from '@deepseek-ai/dsh-web'
 import { DEFAULT_PRICING_URL, parsePricePage, readPrices } from '../src/published-prices.ts'
 import { PRICING_EN_HTML, PRICING_ZH_HTML } from './price-page-fixture.ts'
 
@@ -97,42 +98,64 @@ describe('parsePricePage', () => {
 describe('readPrices', () => {
   const request = { url: DEFAULT_PRICING_URL, currency: 'CNY', timeoutMs: 1_000 }
 
-  it('reads the published table', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(PRICING_ZH_HTML, { status: 200 }))))
-    const result = await readPrices(request)
+  /** One page as the Host's retrieval path hands it back. */
+  function page(options: { content?: string; statusCode?: number; truncated?: boolean } = {}): WebFetchResult {
+    return {
+      url: DEFAULT_PRICING_URL,
+      statusCode: options.statusCode ?? 200,
+      body: { kind: 'html', content: options.content ?? PRICING_ZH_HTML },
+      truncated: options.truncated ?? false,
+    }
+  }
+
+  it('reports that no retrieval path was mounted', async () => {
+    // A deployment that mounts no web capability still owns the namespace; the
+    // price read says what it lacked rather than reporting a transport failure.
+    const result = await readPrices(request, undefined)
+    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'noWeb' })
+  })
+
+  it('reads the published table through the retrieval path it is given', async () => {
+    const fetchPage = vi.fn((_url: string, _signal: AbortSignal): Promise<WebFetchResult> => Promise.resolve(page()))
+    const result = await readPrices(request, fetchPage)
+    expect(fetchPage.mock.calls[0]?.[0]).toBe(DEFAULT_PRICING_URL)
     expect(result.ok).toBe(true)
     expect(result.ok ? result.prices.currency : undefined).toBe('CNY')
     expect(result.ok ? result.prices.models['deepseek-flash']?.offPeak : undefined)
       .toEqual({ cacheHit: 0.02, cacheMiss: 1, output: 4 })
-    vi.unstubAllGlobals()
   })
 
   it('refuses an edition priced in another currency', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(PRICING_EN_HTML, { status: 200 }))))
-    const result = await readPrices(request)
+    const result = await readPrices(request, () => Promise.resolve(page({ content: PRICING_EN_HTML })))
     expect(result.ok ? undefined : result.failure).toEqual({ kind: 'currency', found: 'USD', expected: 'CNY' })
-    vi.unstubAllGlobals()
   })
 
   it('reports a status instead of a table', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('gone', { status: 404 }))))
-    const result = await readPrices(request)
+    const result = await readPrices(request, () => Promise.resolve(page({ statusCode: 404 })))
     expect(result.ok ? undefined : result.failure).toEqual({ kind: 'http', status: 404 })
-    vi.unstubAllGlobals()
   })
 
   it('reports a request that never completed', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))))
-    const result = await readPrices(request)
+    const result = await readPrices(request, () => Promise.reject(new Error('offline')))
     expect(result.ok ? undefined : result.failure).toEqual({ kind: 'network', detail: 'offline' })
-    vi.unstubAllGlobals()
+  })
+
+  it('reports a non-Error rejection verbatim', async () => {
+    const result = await readPrices(request, () => { throw 'closed' })
+    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'network', detail: 'closed' })
   })
 
   it('reports a page it could not read as a table', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('<html>redesigned</html>', { status: 200 }))))
-    const result = await readPrices(request)
+    const result = await readPrices(request, () => Promise.resolve(page({ content: '<html>redesigned</html>' })))
     expect(result.ok ? undefined : result.failure)
       .toEqual({ kind: 'payload', detail: 'no price table on the page' })
-    vi.unstubAllGlobals()
+  })
+
+  it('refuses a body the retrieval path capped', async () => {
+    // A capped body can hold a table whose price rows were cut off, which reads
+    // as a page that published none of them.
+    const result = await readPrices(request, () => Promise.resolve(page({ truncated: true })))
+    expect(result.ok ? undefined : result.failure)
+      .toEqual({ kind: 'payload', detail: 'the page was truncated' })
   })
 })

@@ -157,6 +157,8 @@ export type BalanceFailure = ReadFailure
 /** Why the price read produced no usable table; a price page needs no key. */
 export type PriceFailure =
   | Exclude<ReadFailure, { readonly kind: 'noKey' }>
+  /** The deployment mounts no web capability, so no page can be read. */
+  | { readonly kind: 'noWeb' }
   /** The page states its figures in a currency the document does not price in. */
   | { readonly kind: 'currency'; readonly found: string; readonly expected: string }
 
@@ -255,6 +257,7 @@ const priceFailureSchema: Schema<PriceFailure | null> = Schema.union([
   Schema.object({ kind: Schema.const('http').required(), status: Schema.number().default(0) }),
   Schema.object({ kind: Schema.const('network').required(), detail: Schema.string().default('') }),
   Schema.object({ kind: Schema.const('payload').required(), detail: Schema.string().default('') }),
+  Schema.object({ kind: Schema.const('noWeb').required() }),
   Schema.object({
     kind: Schema.const('currency').required(),
     found: Schema.string().default(''),

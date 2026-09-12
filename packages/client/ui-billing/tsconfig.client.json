@@ -7,12 +7,10 @@
   },
   "include": [
     "src/client",
+    "src/settings.ts",
     "src/css-modules.d.ts"
   ],
   "references": [
-    {
-      "path": "./tsconfig.host.json"
-    },
     {
       "path": "../../../vendor/cordis"
     },
