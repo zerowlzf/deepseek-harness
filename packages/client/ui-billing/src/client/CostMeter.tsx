@@ -11,14 +11,13 @@
 
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { BalanceSnapshot, BillingSettings } from '../settings.ts'
 import { DEFAULT_CURRENCY, routeKey } from '../settings.ts'
-import type { BillingTranslate } from './locales.ts'
+import type { BillingInjected } from './face.ts'
+import { LOCALE_NS } from './locales.ts'
 import { bucketDelta, isEmptyBuckets, sessionBuckets, sessionCost, type SessionBuckets } from './cost.ts'
 import { ageOf, formatAmount, formatBalance } from './format.ts'
 import { IconCoinOutline16, IconWalletOutline16 } from './icons.tsx'
@@ -32,18 +31,14 @@ interface AccumulatedStep {
   readonly buckets: SessionBuckets
 }
 
-/** Props of the composer-stats billing figures. */
-export interface SessionCostMeterProps {
-  /** Read one session projection value. */
-  useProjection: UseProjection
-  /**
-   * Selector hook over the `ui-billing` namespace snapshot, bound by the
-   * renderer from the source the plugin supplies.
-   */
-  useBilling: SnapshotSelectorHook<SettingsScopeSnapshot<BillingSettings>>
-  /** Row locale seat. */
-  t: BillingTranslate
-}
+/**
+ * Props of the composer-stats billing figures: the slot's runtime share (the
+ * projection seats), the plugin's injected face, and the row's locale seat.
+ */
+export type SessionCostMeterProps =
+  & PropsRuntime<'conversation.composer.stats'>
+  & InjectFace<BillingInjected>
+  & PropsLocale<typeof LOCALE_NS>
 
 /**
  * Currency a cost is displayed in: the account's, since that is what the spend
@@ -133,7 +128,7 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
         label={costLabel}
         spokenLabel={priced
           ? t('pill.spokenSessionCost', { amount: formatAmount(total, currency) })
-          : costLabel}
+          : t('pill.spokenCostUnknown')}
         dialogLabel={t('pill.dialog.costTitle')}
         onOpen={() => {
           // One exclusive slot: opening either pill closes the other's seat.
@@ -152,7 +147,7 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
         icon={<IconWalletOutline16 />}
         label={balanceLabel}
         spokenLabel={balance === null
-          ? balanceLabel
+          ? t('pill.spokenBalanceUnknown')
           : t('pill.spokenBalance', { amount: formatBalance(balance.total, balance.currency) })}
         dialogLabel={t('pill.dialog.balanceTitle')}
         onOpen={() => {

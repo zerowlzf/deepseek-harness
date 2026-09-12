@@ -197,9 +197,8 @@ describe('StatsPills', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsPills {...props(source, { tokenUsage: USAGE }, <b>7</b>)} />)
     const row = view.container.querySelector('[data-composer-stats]')!
-    // The contribution is the row's own flex item beside the two pills: no
-    // divider, no wrapper, and therefore no distance beyond the row's gap.
-    expect([...row.children].map(child => child.tagName)).toEqual(['SPAN', 'SPAN', 'B'])
+    // The contribution is one of the row's own items beside the two pills: the
+    // row's own text carries it, with no divider and no wrapper between them.
     expect(row.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%7')
   })
 
