@@ -251,7 +251,7 @@ describe('session cost pill', () => {
         currency: 'CNY',
         models: {},
         cache: { total: 3, currency: 'USD', available: false, at: Date.now() - 120_000 },
-        cacheError: 'balance request failed: HTTP 401',
+        cacheError: { kind: 'http', status: 401 },
       },
     }))
     const usage: TokenUsageProjection = {
@@ -270,12 +270,12 @@ describe('session cost pill', () => {
     const dialog = screen.getByRole('dialog', { name: 'DeepSeek account balance' })
     expect(within(dialog).getByText('Insufficient balance')).toBeDefined()
     expect(within(dialog).getByText('2 min ago')).toBeDefined()
-    expect(within(dialog).getByText('Balance read failed: balance request failed: HTTP 401')).toBeDefined()
+    expect(within(dialog).getByText('Balance read failed: HTTP 401')).toBeDefined()
   })
 
   it('closes on Escape and on an outside pointer', () => {
     const stub = stubSettingsScope<BillingSettings>()
-    stub.publish(snapshot({ value: { currency: 'CNY', models: {}, cache: null, cacheError: 'x' } }))
+    stub.publish(snapshot({ value: { currency: 'CNY', models: {}, cache: null, cacheError: { kind: 'network', detail: 'offline' } } }))
     render(<SessionCostMeter {...seats()} useProjection={projection({}) as never} {...billingFace(stub)} t={t} />)
     const trigger = screen.getByLabelText('DeepSeek account balance unavailable')
     fireEvent.click(trigger)
@@ -781,13 +781,13 @@ describe('settings page', () => {
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot({
       writable: false,
-      value: { currency: 'USD', models: {}, cache: null, cacheError: 'balance request failed: HTTP 401' },
+      value: { currency: 'USD', models: {}, cache: null, cacheError: { kind: 'http', status: 401 } },
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face6 = billingFace(stub, contextDouble(remoteDouble(), describeFace))
     render(<BillingSection {...seats()} {...face6} t={t} />)
     await screen.findByText('This deployment stores settings read-only, so rates cannot be saved.')
-    expect(screen.getByText('Balance read failed: balance request failed: HTTP 401')).toBeDefined()
+    expect(screen.getByText('Balance read failed: HTTP 401')).toBeDefined()
     expect(screen.getByText('Not read')).toBeDefined()
   })
 

@@ -5,13 +5,15 @@
  * than through each renderer.
  */
 import { describe, expect, it } from 'vitest'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ModelRate, RouteUsage } from '../src/settings.ts'
 import { parseRate, priceUsage, routeKey, splitRouteKey } from '../src/settings.ts'
 import {
   bucketDelta, isEmptyBuckets, sessionCost, turnCost, turnRouteUsage,
   turnRoutes, type SessionBuckets, type TurnRouteUsage,
 } from '../src/client/cost.ts'
-import { ageOf, currencySymbol, formatAmount, formatBalance } from '../src/client/format.ts'
+import { ageOf, balanceFailureText, currencySymbol, formatAmount, formatBalance } from '../src/client/format.ts'
+import { zh } from '../src/client/locales.ts'
 import { modelIdsOf, providerRoutes, valueAtPath } from '../src/client/routes.ts'
 
 const FLASH: ModelRate = { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 }
@@ -186,6 +188,26 @@ describe('money format', () => {
   it('falls back to the yuan sign for an unknown currency code', () => {
     expect(currencySymbol('XYZ')).toBe('¥')
     expect(currencySymbol('USD')).toBe('$')
+  })
+})
+
+describe('balance failure copy', () => {
+  /** The Chinese surface's seat over the package dictionary. */
+  const t = makeTranslate(zh, zh)
+
+  it('states each structured reason in the surface language', () => {
+    expect(balanceFailureText({ kind: 'noKey', ref: 'DEEPSEEK_API_KEY' }, t))
+      .toBe('未找到 API key（DEEPSEEK_API_KEY），余额无法读取')
+    expect(balanceFailureText({ kind: 'http', status: 401 }, t)).toBe('余额读取失败：HTTP 401')
+    expect(balanceFailureText({ kind: 'network', detail: '' }, t)).toBe('余额读取失败：请求未能完成')
+    expect(balanceFailureText({ kind: 'payload', detail: '' }, t)).toBe('余额读取失败：响应无法解析')
+  })
+
+  it('keeps the untranslatable detail on a second clause', () => {
+    expect(balanceFailureText({ kind: 'network', detail: 'socket closed' }, t))
+      .toBe('余额读取失败：请求未能完成 · 详情：socket closed')
+    expect(balanceFailureText({ kind: 'payload', detail: 'no balance_infos array' }, t))
+      .toBe('余额读取失败：响应无法解析 · 详情：no balance_infos array')
   })
 })
 
