@@ -34,6 +34,16 @@ const FIELD_KEYS: Readonly<Record<Field, BillingKey>> = {
 /** Both price windows, in the order the fields are rendered. */
 const BANDS: readonly PriceWindow[] = ['peak', 'offPeak']
 
+/**
+ * How long a price read the page asked for keeps reading as in flight.
+ *
+ * The Host clears the request when its read settles, and a read is bounded by
+ * the plugin's own request deadline; a request older than this belongs to a Host
+ * that never got to it — it was replaced while the read was pending — so the
+ * control is offered again rather than staying disabled forever.
+ */
+const REQUEST_STALE_MS = 60_000
+
 /** Draft text keyed `provider/model\u0000window\u0000field`. */
 type Drafts = ReadonlyMap<string, string>
 
@@ -83,7 +93,7 @@ export type BillingSectionProps =
  * @returns the balance card and one card per configured provider.
  */
 export function BillingSection({
-  useBilling, useBillingGroups, t, saveRate, clearRate, routeGroups,
+  useBilling, useBillingGroups, t, saveRate, clearRate, refreshPrices, routeGroups,
 }: BillingSectionProps) {
   const settings = useBilling(snapshot => snapshot.value)
   const [drafts, setDrafts] = useState<Drafts>(() => new Map())
@@ -107,6 +117,10 @@ export function BillingSection({
   // field's placeholder.
   const priced = effectiveRates(settings?.models, published)
   const balance = settings?.cache ?? null
+  const requestedAt = settings?.officialRequest ?? null
+  // The Host clears the request with the read's own settlement, so a request the
+  // page made reads as that read being in flight until then.
+  const pending = requestedAt !== null && Date.now() - requestedAt < REQUEST_STALE_MS
   const loaded = useBillingGroups(groups => groups)
   // The window in force as this page renders, named so the two rows of fields
   // are read against the figure the provider is charging right now.
@@ -213,6 +227,23 @@ export function BillingSection({
     }
   }
 
+  /**
+   * Ask the Host to read the published price page now.
+   *
+   * The write only records the request; the read it causes is the Host's, and
+   * the card shows that read as in flight until the Host clears the field.
+   */
+  const reread = async (): Promise<void> => {
+    setStatus('idle')
+    setFailure('')
+    try {
+      await refreshPrices()
+    } catch (error: unknown) {
+      setStatus('error')
+      setFailure(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   const addManual = (): void => {
     const typed = manual.trim()
     const at = typed.indexOf(ROUTE_SEPARATOR)
@@ -312,10 +343,22 @@ export function BillingSection({
             <IconCoinOutline16 />
             {t('section.officialTitle')}
           </span>
-          <span className={css.cardValue}>
-            {published === null
-              ? t('section.notRead')
-              : t('section.modelCount', { count: Object.keys(published.models).length })}
+          <span className={css.cardEnd}>
+            <span className={css.cardValue}>
+              {published === null
+                ? t('section.notRead')
+                : t('section.modelCount', { count: Object.keys(published.models).length })}
+            </span>
+            {/* The automatic read is long-spaced, so the page asks for one when
+                someone wants the figures now. */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!writable || pending}
+              onClick={() => { void reread() }}
+            >
+              {pending ? t('section.reading') : t('section.readNow')}
+            </Button>
           </span>
         </header>
         <div className={css.cardMeta}>

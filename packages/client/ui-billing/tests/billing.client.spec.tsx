@@ -50,7 +50,14 @@ function snapshot(partial: SnapshotParts = {}): SettingsScopeSnapshot<BillingSet
   return {
     status: 'ready',
     value: {
-      currency: DEFAULT_CURRENCY, models: {}, cache: null, cacheError: null, official: null, officialError: null, ...value,
+      currency: DEFAULT_CURRENCY,
+      models: {},
+      cache: null,
+      cacheError: null,
+      official: null,
+      officialError: null,
+      officialRequest: null,
+      ...value,
     },
     base: undefined,
     user: undefined,
@@ -84,6 +91,7 @@ function billingFace(stub: StubSettingsScope<BillingSettings>, ctx?: Context) {
       useSyncExternalStore(subscribeGroups, () => selector(groups.getSnapshot()))) as never,
     saveRate: vi.fn(async () => {}),
     clearRate: vi.fn(async () => {}),
+    refreshPrices: vi.fn(async () => {}),
     routeGroups: async () => {
       if (ctx === undefined) return
       const describe = (ctx as unknown as {
@@ -1488,6 +1496,59 @@ describe('settings page', () => {
     expect(screen.getByText('Read 3 d ago')).toBeDefined()
   })
 
+  it('asks the Host to read the published page now', async () => {
+    const stored = {
+      models: {}, currency: 'CNY', at: Date.now() - 3 * 86_400_000, source: 'https://api-docs.deepseek.com/x',
+    }
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot({ value: { official: stored } }))
+    const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
+    const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
+    render(<BillingSection {...seats()} {...face} t={t} />)
+
+    fireEvent.click(await screen.findByText('Read now'))
+    await act(async () => { await Promise.resolve() })
+    expect(face.refreshPrices).toHaveBeenCalledTimes(1)
+
+    // The request reads as in flight until the Host clears it with that read's
+    // own settlement, so the control states that instead of inviting a second.
+    await act(async () => {
+      stub.publish(snapshot({ value: { official: stored, officialRequest: Date.now() } }))
+    })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Reading…' }).disabled).toBe(true)
+
+    // A request the Host never answered — it was replaced while the read was
+    // pending — stops reading as live, and the control is offered again.
+    await act(async () => {
+      stub.publish(snapshot({ value: { official: stored, officialRequest: Date.now() - 120_000 } }))
+    })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Read now' }).disabled).toBe(false)
+  })
+
+  it('reports a refused read request', async () => {
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot({
+      value: {
+        official: { models: {}, currency: 'CNY', at: Date.now(), source: 'https://api-docs.deepseek.com/x' },
+      },
+    }))
+    const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
+    const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
+    render(<BillingSection {...seats()} {...face} t={t} />)
+
+    // A deployment that refuses the write refuses the request with it, and the
+    // page states the refusal however the transport phrased it.
+    face.refreshPrices.mockRejectedValueOnce(new Error('read-only'))
+    fireEvent.click(await screen.findByText('Read now'))
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('Save failed: read-only')).toBeDefined()
+
+    face.refreshPrices.mockRejectedValueOnce('locked')
+    fireEvent.click(screen.getByText('Read now'))
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('Save failed: locked')).toBeDefined()
+  })
+
   it('shows a recorded source that is not a URL as it was recorded', async () => {
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot({
@@ -1642,6 +1703,19 @@ describe('plugin registration', () => {
     expect(scope.mutate).toHaveBeenCalledWith([
       { op: 'unset', path: ['models', 'bai/glm-5.3-flash'] },
     ])
+
+    // A read the page asks for travels as its own write, timed so the Host can
+    // tell one request from the next.
+    scope.mutate.mockClear()
+    await act(async () => { await face.refreshPrices() })
+    expect(scope.mutate).toHaveBeenCalledTimes(1)
+    const [queued] = scope.mutate.mock.calls[0] as unknown as
+      [readonly { op: string; path: readonly string[]; value: unknown }[]]
+    const [request] = queued ?? []
+    expect(request?.op).toBe('set')
+    expect(request?.path).toEqual(['officialRequest'])
+    if (typeof request?.value !== 'number') throw new Error('the request carries no moment')
+    expect(request.value).toBeGreaterThan(0)
 
     // The scope stub stands in for the transport: what this package owns is the
     // source it hands the renderer, and that a publication reaches it.

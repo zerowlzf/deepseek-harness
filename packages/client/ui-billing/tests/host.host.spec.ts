@@ -138,6 +138,23 @@ function mountWeb(ctx: Context, fetchPage: WebFetchProvider['fetch']): void {
   new WebRuntime(ctx).registerFetchProvider({ id: 'stub-fetch', available: () => true, fetch: fetchPage })
 }
 
+/**
+ * Mount the in-memory settings provider the way a deployment mounts its own:
+ * through the Loader, so its document is loaded before any dependent activates.
+ * @param ctx - the context to register the provider into.
+ * @param options - the document it starts from, and whether writes are accepted.
+ * @returns the provider holding the writes.
+ */
+async function mountSettings(
+  ctx: Context,
+  options: { doc?: Record<string, unknown>; writable?: boolean } = {},
+): Promise<MemorySettings> {
+  await ctx.plugin(MemorySettings, options)
+  const provider = ctx.get('settings') as MemorySettings | undefined
+  if (provider === undefined) throw new Error('the settings provider did not register')
+  return provider
+}
+
 /** Values the Loader resolves from the plugin's own `Config` schema. */
 const RESOLVED_CONFIG = {
   apiKeyEnv: 'DEEPSEEK_API_KEY',
@@ -154,9 +171,14 @@ const RESOLVED_CONFIG = {
  * deployment mounts.
  * @param config - plugin configuration overrides.
  * @param answers - what each read answers, and whether a web capability exists.
+ * @param stored - the settings document the provider starts from.
  * @returns the context, the provider holding the writes, both read stubs, and the plugin fiber.
  */
-async function mount(config: Partial<Config> = {}, answers: Answers = {}): Promise<{
+async function mount(
+  config: Partial<Config> = {},
+  answers: Answers = {},
+  stored: Record<string, unknown> = {},
+): Promise<{
   ctx: Context
   settings: MemorySettings
   fiber: { dispose: () => Promise<void> }
@@ -167,7 +189,7 @@ async function mount(config: Partial<Config> = {}, answers: Answers = {}): Promi
   // The real timer service mixes `timeout` onto the context, which is the API
   // the plugin's refresh chain re-arms through.
   await ctx.plugin(Timer)
-  const settings = new MemorySettings(ctx)
+  const settings = await mountSettings(ctx, { doc: stored })
   new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
   const { fetchImpl, page } = stubReads(answers)
   if (answers.web !== false) mountWeb(ctx, page)
@@ -188,7 +210,7 @@ describe('configuration', () => {
       currency: DEFAULT_CURRENCY,
       refreshIntervalMs: 300_000,
       pricingUrl: DEFAULT_PRICING_URL,
-      pricingRefreshIntervalMs: 86_400_000,
+      pricingRefreshIntervalMs: 15 * 86_400_000,
       requestTimeoutMs: 15_000,
     })
   })
@@ -225,7 +247,7 @@ describe('namespace ownership', () => {
     const { fetchImpl, page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
-    const settings = new MemorySettings(ctx)
+    const settings = await mountSettings(ctx)
     mountWeb(ctx, page)
     const fiber = ctx.plugin({ inject, apply }, RESOLVED_CONFIG)
     cleanups.push(async () => { await fiber.dispose() })
@@ -292,7 +314,7 @@ describe('namespace ownership', () => {
     const { page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
-    new MemorySettings(ctx)
+    await mountSettings(ctx)
     new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
     mountWeb(ctx, page)
     // The chain arms through the timer service's own `timeout`, whose
@@ -310,7 +332,7 @@ describe('namespace ownership', () => {
     const { page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
-    new MemorySettings(ctx)
+    await mountSettings(ctx)
     new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
     mountWeb(ctx, page)
     const timeout = vi.spyOn(ctx.timer, 'timeout')
@@ -336,7 +358,7 @@ describe('namespace ownership', () => {
     const { page } = stubReads()
     const ctx = new Context()
     await ctx.plugin(Timer)
-    const readOnly = new MemorySettings(ctx, { writable: false })
+    const readOnly = await mountSettings(ctx, { writable: false })
     new MemoryCredentials(ctx, { DEEPSEEK_API_KEY: 'key-under-test' })
     mountWeb(ctx, page)
     ctx.logger.warn = warn as never
@@ -371,6 +393,58 @@ describe('namespace ownership', () => {
     await new Promise((resolve) => { setTimeout(resolve, 5) })
     expect(settings.persisted).toEqual([])
     expect(settings.doc[NS]).toBeUndefined()
+  })
+
+  it('reads the page when the browser asks for it, then clears the request', async () => {
+    const { ctx, settings, page } = await mount()
+    await vi.waitFor(() => { expect(page).toHaveBeenCalledTimes(1) })
+
+    // The page's request is a settings write: that document is the one store
+    // both halves share, and the Host watches it for exactly this.
+    await ctx.settings.mutate(NS, [{ op: 'set', path: ['officialRequest'], value: Date.now() }])
+    await vi.waitFor(() => { expect(page).toHaveBeenCalledTimes(2) })
+    // It stays pending until its read settles, which is how the page shows that
+    // read as in flight.
+    await vi.waitFor(() => { expect(settings.doc[NS]).toMatchObject({ officialRequest: null }) })
+  })
+
+  it('serves one read for a request the page repeated', async () => {
+    // The reading is left unanswered, so the repeat lands while it is in
+    // flight: the same request twice is not a second read.
+    const reading = Promise.withResolvers<WebFetchResult>()
+    const { ctx, page } = await mount({}, { prices: () => reading.promise })
+    const asked = Date.now()
+    await ctx.settings.mutate(NS, [{ op: 'set', path: ['officialRequest'], value: asked }])
+    await ctx.settings.mutate(NS, [{ op: 'set', path: ['officialRequest'], value: asked }])
+    // The read start-up began, plus the one the request caused.
+    await vi.waitFor(() => { expect(page).toHaveBeenCalledTimes(2) })
+    reading.resolve(pageOf())
+    await new Promise((resolve) => { setTimeout(resolve, 5) })
+    expect(page).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves the request field alone for a read nobody asked for', async () => {
+    const { settings } = await mount()
+    await vi.waitFor(() => { expect(storedOfficial(settings)).not.toBeUndefined() })
+    expect(settings.doc[NS]).not.toHaveProperty('officialRequest')
+  })
+
+  it('waits out the interval rather than re-reading a table it still covers', async () => {
+    const { page, settings } = await mount({ pricingRefreshIntervalMs: 86_400_000 }, {}, {
+      [NS]: { official: { models: {}, currency: 'CNY', at: Date.now() - 60_000, source: DEFAULT_PRICING_URL } },
+    })
+    // The balance chain still settles, which is what proves the plugin ran: a
+    // published price list moves rarely, so a restart inside the interval is
+    // not a reason to read the page again.
+    await vi.waitFor(() => { expect(storedCache(settings)).toMatchObject({ total: 12.34 }) })
+    expect(page).not.toHaveBeenCalled()
+  })
+
+  it('re-reads a table the interval has passed', async () => {
+    const { page } = await mount({ pricingRefreshIntervalMs: 86_400_000 }, {}, {
+      [NS]: { official: { models: {}, currency: 'CNY', at: Date.now() - 2 * 86_400_000, source: DEFAULT_PRICING_URL } },
+    })
+    await vi.waitFor(() => { expect(page).toHaveBeenCalledTimes(1) })
   })
 })
 
