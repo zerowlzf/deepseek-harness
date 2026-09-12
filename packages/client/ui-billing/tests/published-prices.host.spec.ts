@@ -93,6 +93,65 @@ describe('parsePricePage', () => {
     ].join('')
     expect(parsePricePage(unitless)).toBeUndefined()
   })
+
+  it('refuses a table that carries no row', () => {
+    expect(parsePricePage('<table><caption>价格</caption></table>')).toBeUndefined()
+  })
+
+  it('refuses a table that names a model but prices none of them', () => {
+    // The empty row states nothing and the header row states no figure, so the
+    // table yields nothing rather than a row of zeroes.
+    const unpriced = '<table><tr></tr><tr><td>模型</td><td>deepseek-flash</td></tr></table>'
+    expect(parsePricePage(unpriced)).toBeUndefined()
+  })
+
+  it('refuses a window label that opens no bucket', () => {
+    // A price row that names its window before any row named a bucket states no
+    // price of this table.
+    const orphanWindow = [
+      '<table>',
+      '<tr><td>模型</td><td>deepseek-flash</td></tr>',
+      '<tr><td>高峰时段</td><td>0.04元</td></tr>',
+      '<tr><td>高峰时段</td><td>2元</td></tr>',
+      '</table>',
+    ].join('')
+    expect(parsePricePage(orphanWindow)).toBeUndefined()
+  })
+
+  it('refuses a row whose figures do not line up with the model columns', () => {
+    // A price row states one figure per model column; a row stating another
+    // number of them belongs to a table this parser cannot read.
+    const misaligned = [
+      '<table>',
+      '<tr><td>模型</td><td>deepseek-flash</td></tr>',
+      '<tr><td>价格</td><td>百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.02元</td></tr>',
+      '<tr><td>高峰时段</td><td>0.04元</td></tr>',
+      '<tr><td>百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>1元</td><td>2元</td></tr>',
+      '<tr><td>高峰时段</td><td>2元</td></tr>',
+      '<tr><td>百万tokens输出</td><td>空闲时段</td><td>4元</td></tr>',
+      '<tr><td>高峰时段</td><td>8元</td></tr>',
+      '</table>',
+    ].join('')
+    expect(parsePricePage(misaligned)).toBeUndefined()
+  })
+
+  it('refuses a cell that states no amount and one that states an impossible one', () => {
+    // Both are cells a redesigned page can carry: a dash where a figure should
+    // be, and a digit run long enough to read as infinity.
+    const impossible = '9'.repeat(400)
+    const broken = [
+      '<table>',
+      '<tr><td>模型</td><td>deepseek-flash</td></tr>',
+      '<tr><td>价格</td><td>百万tokens输入（缓存命中）</td><td>空闲时段</td><td>—</td></tr>',
+      '<tr><td>高峰时段</td><td>—</td></tr>',
+      `<tr><td>百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>${impossible}元</td></tr>`,
+      '<tr><td>高峰时段</td><td>2元</td></tr>',
+      '<tr><td>百万tokens输出</td><td>空闲时段</td><td>4元</td></tr>',
+      '<tr><td>高峰时段</td><td>8元</td></tr>',
+      '</table>',
+    ].join('')
+    expect(parsePricePage(broken)).toBeUndefined()
+  })
 })
 
 describe('readPrices', () => {
