@@ -5,24 +5,22 @@
 // million tokens in the account's currency, which is the unit the provider
 // bills in.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { DEFAULT_CURRENCY, ROUTE_SEPARATOR, splitRouteKey, type BillingSettings, type ModelRate } from '../settings.ts'
-import { providerRoutes, type ProviderRouteGroup } from './routes.ts'
-import { ageOf, formatBalance, parseRate } from './format.ts'
-import { currencyOf, useScopeSnapshot } from './CostMeter.tsx'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import {
+  DEFAULT_CURRENCY, RATE_FIELDS, ROUTE_SEPARATOR, splitRouteKey, type BillingSettings, type ModelRate, type RateField,
+} from '../settings.ts'
+import type { ProviderRouteGroup } from './routes.ts'
+import { ageOf, formatBalance } from './format.ts'
+import { currencyOf } from './CostMeter.tsx'
 import { IconWalletOutline16 } from './icons.tsx'
 import type { BillingKey, BillingTranslate } from './locales.ts'
 import css from './SettingsSection.module.css'
 
-/** The three rate fields, in display order. */
-const FIELDS = ['cacheHit', 'cacheMiss', 'output'] as const
-
 /** One editable rate field. */
-type Field = (typeof FIELDS)[number]
+type Field = RateField
 
 /** Dictionary key of one field's label. */
 const FIELD_KEYS: Readonly<Record<Field, BillingKey>> = {
@@ -47,53 +45,46 @@ function rateText(rate: ModelRate | undefined, field: Field): string {
 }
 
 /**
- * Read the settings describe mirror into provider groups.
- * @param ctx - the client plugin's context; its `remote.llm` namespace carries the directory.
- * @param describe - the shared settings describe face.
- * @returns provider groups, or an empty list while either read is unavailable.
+ * Props of the Billing settings section.
+ *
+ * Every ctx read belongs to the plugin's apply closure: the namespace arrives as
+ * a `useBilling` selector hook and the provider directory as two plain members —
+ * `routeGroups` asks for a load, `useBillingGroups` observes the answer, and the
+ * invalidations that trigger a refresh are subscribed where they belong.
  */
-async function loadGroups(
-  ctx: ClientContext,
-  describe: {
-    ensure(): Promise<void>
-    getSnapshot(): {
-      view: { namespaces: readonly { ns: string; value: unknown; user?: unknown }[] } | undefined
-    }
-  },
-): Promise<ProviderRouteGroup[]> {
-  const [registered, directory] = await Promise.all([
-    ctx.remote.llm.listProviders(),
-    ctx.remote.llm.listConfigurableProviders(),
-  ])
-  if (!registered.ok || !directory.ok) return []
-  await describe.ensure()
-  const view = describe.getSnapshot().view
-  if (view === undefined) return []
-  return providerRoutes(directory.value, registered.value, view.namespaces.map(entry => ({
-    ns: entry.ns,
-    value: entry.value,
-    ...entry.user === undefined ? {} : { user: entry.user },
-  })))
-}
-
-/** Props of the Billing settings section. */
 export interface BillingSectionProps {
-  /** The `ui-billing` namespace scope, bound by the plugin. */
-  scope: SettingsScope<BillingSettings>
-  /** Client plugin context, used for provider discovery and the settings mirror. */
-  ctx: ClientContext
+  /**
+   * Selector hook over the `ui-billing` namespace snapshot, bound by the
+   * renderer from the source the plugin supplies.
+   */
+  useBilling: SnapshotSelectorHook<SettingsScopeSnapshot<BillingSettings>>
+  /**
+   * Selector hook over the provider groups the plugin loaded, joined with the
+   * profiles their settings hold.
+   */
+  useBillingGroups: SnapshotSelectorHook<readonly ProviderRouteGroup[]>
   /** Page locale seat. */
   t: BillingTranslate
+  /**
+   * Write one route's three price fields, or drop the row when every field is
+   * empty.
+   */
+  saveRate: (route: string, fields: Readonly<Record<string, string>>) => Promise<void>
+  /** Remove one stored rate row. */
+  clearRate: (route: string) => Promise<void>
+  /** Ask the plugin for one directory load. */
+  routeGroups: () => Promise<void>
 }
 
 /**
  * Render the Billing settings page.
- * @param props - namespace scope, discovery context, and locale.
- * @returns the balance card and the per-model rate rows.
+ * @param props - namespace snapshot hook, group hook, locale, the two writes, and the loader.
+ * @returns the balance card and one card per configured provider.
  */
-export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
-  const snapshot = useScopeSnapshot(scope)
-  const [groups, setGroups] = useState<readonly ProviderRouteGroup[]>([])
+export function BillingSection({
+  useBilling, useBillingGroups, t, saveRate, clearRate, routeGroups,
+}: BillingSectionProps) {
+  const settings = useBilling(snapshot => snapshot.value)
   const [drafts, setDrafts] = useState<Drafts>(() => new Map())
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [failure, setFailure] = useState('')
@@ -102,75 +93,77 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
   // One provider card is open at a time: the page shows what the rates apply to
   // (the models the user configured), and the fields appear on demand.
   const [editing, setEditing] = useState<string | undefined>(undefined)
-  const rates = snapshot.value?.models ?? {}
-  const balance = snapshot.value?.cache ?? null
+  const writable = useBilling(snapshot => snapshot.writable)
+  const rates = settings?.models ?? {}
+  const balance = settings?.cache ?? null
+  const loaded = useBillingGroups(groups => groups)
+  // Routes typed on this page that no directory declares and no stored row
+  // covers yet, by provider. They keep their card (and their row) open until a
+  // save turns them into stored rates.
+  const [drafted, setDrafted] = useState<ReadonlyMap<string, readonly string[]>>(() => new Map())
 
-  const describe = ctx.settingsScope.describe()
-  const reload = useCallback(async (): Promise<void> => {
-    setGroups(await loadGroups(ctx, describe))
-  }, [ctx, describe])
-
-  useEffect(() => {
-    void reload()
-    const disposers = [
-      ctx.remote.$on('llm/adapters-updated', () => { void reload() }),
-      ctx.on('connection/reset', () => { void reload() }),
-    ]
-    return () => { for (const dispose of disposers) dispose() }
-  }, [ctx, reload])
+  // The plugin owns the reads and the invalidations that refresh them; this
+  // effect only asks for one load, so opening the page never waits on a
+  // directory read the plugin already started at mount.
+  useEffect(() => { void routeGroups() }, [routeGroups])
 
   // Every provider card the page shows: the ones the user configured (or that
   // the adapter serves without configuration), plus any provider a stored rate
-  // row still names, so a route whose provider went away stays editable and
-  // clearable. A catalogue row nobody configured carries nothing to price and
-  // is left out.
+  // row or a route typed here names, so a route whose provider went away stays
+  // editable and clearable. A catalogue row nobody configured carries nothing to
+  // price and is left out. A configured provider with no readable model list
+  // still gets its card — that is where its routes are added by hand.
   const cards = useMemo(() => {
+    const storedRoutes = Object.keys(rates)
     const byProvider = new Map<string, string[]>()
-    for (const group of groups) {
-      if (!group.configured && !Object.keys(rates).some(key =>
-        key.startsWith(`${group.provider}${ROUTE_SEPARATOR}`))) continue
-      const models = [...group.models]
-      for (const key of Object.keys(rates)) {
-        if (!key.startsWith(`${group.provider}${ROUTE_SEPARATOR}`)) continue
+    for (const group of loaded) {
+      const covered = storedRoutes.filter(key =>
+        key.startsWith(`${group.provider}${ROUTE_SEPARATOR}`))
+      const typed = drafted.get(group.provider) ?? []
+      if (!group.configured && covered.length === 0 && typed.length === 0) continue
+      const models = [...group.models, ...typed]
+      for (const key of covered) {
         const model = key.slice(group.provider.length + 1)
         if (!models.includes(model)) models.push(model)
       }
       byProvider.set(group.provider, models)
     }
-    for (const key of Object.keys(rates)) {
+    for (const [provider, models] of drafted) {
+      if (byProvider.has(provider)) continue
+      byProvider.set(provider, [...models])
+    }
+    for (const key of storedRoutes) {
       const route = splitRouteKey(key)
       if (route === undefined || byProvider.has(route.provider)) continue
       byProvider.set(route.provider, [route.model])
     }
     return [...byProvider]
-  }, [groups, rates])
+  }, [loaded, drafted, rates])
 
   const nameOf = (provider: string): string =>
-    groups.find(group => group.provider === provider)?.displayName ?? provider
+    loaded.find(group => group.provider === provider)?.displayName ?? provider
+
+  /** Providers this page shows, in card order: the directory's, then typed ones. */
+  const groupOf = (provider: string): ProviderRouteGroup | undefined =>
+    loaded.find(group => group.provider === provider)
+    ?? (drafted.has(provider)
+      ? { provider, displayName: provider, models: [], modelsReadable: true, official: false, configured: true }
+      : undefined)
 
   const valueOf = (route: string, field: Field): string =>
     drafts.get(draftKey(route, field)) ?? rateText(rates[route], field)
 
+  /** Write one row through the plugin, then settle the row's own draft state. */
   const save = async (route: string): Promise<void> => {
-    const ops: SettingsPathOpView[] = []
-    for (const field of FIELDS) {
-      const raw = valueOf(route, field)
-      const parsed = parseRate(raw)
-      if (parsed === undefined) continue
-      if (raw.trim() === '' && rates[route] === undefined) continue
-      ops.push({ op: 'set', path: ['models', route, field], value: parsed })
-    }
     setStatus('saving')
     setFailure('')
+    const typed: Record<string, string> = {}
+    for (const field of RATE_FIELDS) typed[field] = valueOf(route, field)
     try {
-      if (ops.length === 0) {
-        await scope.mutate([{ op: 'unset', path: ['models', route] }])
-      } else {
-        await scope.mutate(ops)
-      }
+      await saveRate(route, typed)
       setDrafts((current) => {
         const next = new Map(current)
-        for (const field of FIELDS) next.delete(draftKey(route, field))
+        for (const field of RATE_FIELDS) next.delete(draftKey(route, field))
         return next
       })
       setStatus('saved')
@@ -180,14 +173,15 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
     }
   }
 
+  /** Remove one row through the plugin, then settle the row's own draft state. */
   const clear = async (route: string): Promise<void> => {
     setStatus('saving')
     setFailure('')
     try {
-      await scope.mutate([{ op: 'unset', path: ['models', route] }])
+      await clearRate(route)
       setDrafts((current) => {
         const next = new Map(current)
-        for (const field of FIELDS) next.delete(draftKey(route, field))
+        for (const field of RATE_FIELDS) next.delete(draftKey(route, field))
         return next
       })
       setStatus('saved')
@@ -206,19 +200,18 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
     }
     setManualError(false)
     setManual('')
-    // Below the open provider, the typed route is already in the draft table;
-    // its row renders as soon as its price is saved.
+    // The typed route joins the page's own model list for the provider it names,
+    // so its row exists to be priced before anything is stored; the card then
+    // stays while its price is unsaved.
     const provider = typed.slice(0, at)
-    if (!groups.some(group => group.provider === provider)) {
-      setGroups(current => [...current, {
-        provider,
-        displayName: provider,
-        models: [typed.slice(at + 1)],
-        modelsReadable: true,
-        official: false,
-        configured: true,
-      }])
-    }
+    const model = typed.slice(at + 1)
+    setDrafted((current) => {
+      const models = current.get(provider) ?? []
+      if (models.includes(model)) return current
+      const next = new Map(current)
+      next.set(provider, [...models, model])
+      return next
+    })
     setEditing(provider)
   }
 
@@ -244,20 +237,20 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
           {balance !== null && !balance.available && (
             <span className={css.warn}>{t('pill.dialog.availableNo')}</span>
           )}
-          <span>{currencyOf(balance, snapshot.value?.currency ?? DEFAULT_CURRENCY)}</span>
+          <span>{currencyOf(balance, settings?.currency ?? DEFAULT_CURRENCY)}</span>
         </div>
-        {snapshot.value?.cacheError != null && (
-          <div className={css.warn}>{t('section.balanceError', { message: snapshot.value.cacheError })}</div>
+        {settings?.cacheError != null && (
+          <div className={css.warn}>{t('section.balanceError', { message: settings.cacheError })}</div>
         )}
       </section>
 
-      {!snapshot.writable && <div className={css.warn}>{t('section.writable')}</div>}
+      {!writable && <div className={css.warn}>{t('section.writable')}</div>}
 
       <section className={css.rates} data-billing-rates>
         <h3 className={css.sectionTitle}>{t('section.providers')}</h3>
         {cards.length === 0 && <p className={css.empty}>{t('section.providersEmpty')}</p>}
         {cards.map(([provider, models]) => {
-          const group = groups.find(candidate => candidate.provider === provider)
+          const group = groupOf(provider)
           const open = editing === provider
           const priced = models.filter(model => rates[`${provider}${ROUTE_SEPARATOR}${model}`] !== undefined).length
           return (
@@ -295,7 +288,7 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
                       <div key={route} className={css.row} data-billing-rate-row={route}>
                         <span className={css.modelName} title={model}>{model}</span>
                         <div className={css.fields}>
-                          {FIELDS.map(field => (
+                          {RATE_FIELDS.map(field => (
                             <label key={field} className={css.field}>
                               <span className={css.fieldLabel}>{t(FIELD_KEYS[field])}</span>
                               <input
@@ -304,7 +297,7 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
                                 inputMode="decimal"
                                 value={valueOf(route, field)}
                                 placeholder="0"
-                                disabled={!snapshot.writable}
+                                disabled={!writable}
                                 aria-label={`${route} ${t(FIELD_KEYS[field])}`}
                                 onChange={(event) => {
                                   const text = event.currentTarget.value
@@ -321,7 +314,7 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={!snapshot.writable || status === 'saving'}
+                              disabled={!writable || status === 'saving'}
                               onClick={() => { void clear(route) }}
                             >
                               {t('section.clear')}
@@ -329,7 +322,7 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
                             <Button
                               size="sm"
                               variant="primary"
-                              disabled={!snapshot.writable || status === 'saving'}
+                              disabled={!writable || status === 'saving'}
                               onClick={() => { void save(route) }}
                             >
                               {status === 'saving' ? t('section.saving') : t('section.save')}

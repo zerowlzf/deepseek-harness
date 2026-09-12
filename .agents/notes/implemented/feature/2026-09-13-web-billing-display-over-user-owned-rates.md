@@ -42,6 +42,10 @@ The turn's price prefers the durable turn-tail accounting (per-route, from the l
 
 The settings page follows the shipped Models page: one card per provider the user configured, or that a stored rate row still names, with the provider's models behind that card's own edit control. Whether a provider is configured comes from the user layer of its settings namespace — the profile the Models page itself writes — so a catalogue entry nobody configured no longer contributes a card full of zero-priced rows.
 
+The apply closure owns every ctx read. Components take a `useBilling` selector hook over the namespace snapshot and a `useBillingGroups` hook over the loaded groups — both bound by the renderer from bare sources in the `hooks` compartment — plus plain `routeGroups`, `saveRate`, and `clearRate` callbacks. The directory's invalidations are subscribed in the plugin, and nothing loads until the page asks, so mounting the plugin issues no request at all.
+
+A chain entry receives the owner's currency spread flat onto its props: the renderer hands a component `{...ownerProps, matched}`, so the per-turn pill reads `turn` directly the way the shipped produced-files entry reads `openFile`. Reading it as `props.owner` left the pill permanently absent without an error, which is why the package's own spec, which fed the nested shape by hand, could not see it.
+
 The settings namespace and the plugin's copy dictionary are named apart (`ui-billing` and `billing`). One identifier for both binds the scope to the dictionary, which reads as an unregistered namespace: every surface renders its unavailable state while the Host serves correct values.
 
 ## Alternatives considered
