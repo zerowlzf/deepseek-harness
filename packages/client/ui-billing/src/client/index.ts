@@ -28,7 +28,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { NS, parseRate, RATE_FIELDS, type BillingSettings } from '../settings.ts'
 import { LOCALE_NS, en, zh, type BillingKey, type BillingTranslate } from './locales.ts'
@@ -209,16 +208,15 @@ export function apply(ctx: ClientContext): void {
     inject: injected,
   }, SessionCostMeter))
 
-  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-    name: 'conversation.chat.turnTail',
-    // Every completed turn elects this entry, including one interrupted before
-    // any finalized text: that turn still owns its accounting and still renders
-    // the row, so its cost is exactly what a reader wants there. A turn with no
-    // accounting at all renders nothing. `priority` keeps the shipped
-    // produced-files entry (default 0) first, so a turn with files keeps its
-    // file row and the cost pill follows it.
-    select: (owner: TurnTailOwnerProps) => ({ turn: owner.turn.turn }),
-    priority: 1,
+  // The completed Turn's own action row owns the line these figures belong to,
+  // so its trailing figures hole is the seat: the cost pill lands after the
+  // shipped Turn-usage and Turn-time pills, inside the same row and the same
+  // cluster. A list, not the tail chain above it — the chain elects one entry,
+  // so a Turn that also produced files would lose its cost.
+  ctx.slots.inject('conversation.chat.turn-stats', () => ctx.slots.register({
+    name: 'conversation.chat.turn-stats',
+    id: 'billing',
+    order: 0,
     locale: LOCALE_NS,
     inject: injected,
   }, TurnCostMeter))

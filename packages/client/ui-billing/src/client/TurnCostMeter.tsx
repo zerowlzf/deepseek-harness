@@ -1,25 +1,22 @@
-// Turn-cost pill inside a completed turn's action row: the stat pill beside
+// Turn-cost pill inside a completed turn's own action row: the stat pill after
 // the shipped Turn-usage and Turn-time triggers, labelled with what the turn
 // cost and click-opening the per-route breakdown.
 //
 // The turn's token accounting comes from the turn-tail payload, which is the
-// same evidence the Turn-usage dialog shows; the loaded window supplies each
-// attempt's route, so a turn that switched models is priced per attempt. A turn
-// interrupted before any finalized text still owns its accounting and still
-// renders the row, so this pill reads the projection for that turn rather than
-// depending on a closing message.
+// same evidence the Turn-usage dialog shows and the only per-turn total the
+// session log can prove; the loaded window supplies each attempt's route, so a
+// turn that switched models is priced per attempt. A turn interrupted before
+// any finalized text still owns its accounting and still renders the row, so
+// this pill prices whatever the row's own evidence holds.
 
 import { Fragment } from 'react'
 import { createPortal } from 'react-dom'
-import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
-  ChatConversationViewNode, TurnTokenUsage, TurnTailChatData, TurnTailOwnerProps, UseChat,
+  ChatConversationViewNode, TurnTailChatData, TurnTailOwnerProps, UseChat,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
-import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { DEFAULT_CURRENCY, type BillingSettings, type ModelRate } from '../settings.ts'
+import { DEFAULT_CURRENCY, routeKey, type BillingSettings, type ModelRate } from '../settings.ts'
 import type { BillingTranslate } from './locales.ts'
 import { turnCost, turnRouteUsage, type TurnBuckets, type TurnRouteUsage } from './cost.ts'
 import { formatAmount } from './format.ts'
@@ -32,17 +29,14 @@ import dialogCss from './stat-dialog.module.css'
 /**
  * Props of the turn-tail billing pill.
  *
- * The chain's owner share arrives spread onto the entry, not under an `owner`
- * key: the renderer hands a component `{...ownerProps, matched}`, and the
- * shipped produced-files entry reads `openFile` the same flat way. `turn` is
- * therefore a direct prop, and `select`'s answer arrives as `matched` — which
- * this entry does not need, because the owner already names the turn.
+ * The row's hole hands its owner share the way every other entry receives it:
+ * spread onto the component, not nested under an `owner` key, so `turn` is a
+ * direct prop. It is the Turn's Location, and the number this pill prices is
+ * `turn.turn`.
  */
 export interface TurnCostMeterProps extends Pick<TurnTailOwnerProps, 'turn'> {
   /** Selector over the current Chat snapshot. */
   useChat: UseChat
-  /** Read one session projection value. */
-  useProjection: UseProjection
   /**
    * Selector hook over the `ui-billing` namespace snapshot, bound by the
    * renderer from the source the plugin supplies.
@@ -72,7 +66,9 @@ function count(value: unknown): number {
 export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: number): AttemptUsage[] {
   const attempts: AttemptUsage[] = []
   for (const node of nodes) {
-    if (node.kind !== 'assistant') continue
+    // The assistant renderer kind, which is one row per settled or interrupted
+    // Assistant step: the per-attempt accounting a turn is billed for.
+    if (node.kind !== 'assistant-step') continue
     const data = node.data as {
       readonly turn?: unknown
       readonly finalNode?: {
@@ -88,7 +84,7 @@ export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: num
     const model = finalNode?.provenance?.model
     if (typeof provider !== 'string' || typeof model !== 'string') continue
     attempts.push({
-      route: `${provider}/${model}`,
+      route: routeKey(provider, model),
       buckets: {
         uncachedInputTokens: count(Reflect.get(usage, 'inputTokens')),
         outputTokens: count(Reflect.get(usage, 'outputTokens')),
@@ -112,48 +108,18 @@ function rateText(route: string, rate: ModelRate | undefined, t: TurnCostMeterPr
 }
 
 /**
- * Aggregate a turn's accounting out of the session projection.
- *
- * The projection carries no per-turn split, so a turn read this way is priced
- * as one stretch under the newest known route — which is the honest reading
- * when the loaded window no longer holds the attempt that produced it.
- * @param usage - the session's running token total.
- * @param selection - the newest known route.
- * @returns the turn's aggregate under that route, or undefined before any usage.
- */
-function projectionUsage(
-  usage: TokenUsageProjection | undefined,
-  selection: ModelSelectionProjection | undefined,
-): TurnTokenUsage | undefined {
-  if (usage === undefined) return undefined
-  const buckets = {
-    uncachedInputTokens: usage.uncachedInputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheWriteTokens: usage.cacheWriteTokens,
-    totalTokens: usage.uncachedInputTokens + usage.cacheReadTokens
-      + usage.cacheWriteTokens + usage.outputTokens,
-  }
-  if (buckets.totalTokens === 0) return undefined
-  const current = selection?.next ?? selection?.lastUsed
-  return current === null || current === undefined
-    ? buckets
-    : { ...buckets, routes: [{ provider: current.provider, model: current.model }] }
-}
-
-/**
  * Render the turn-cost pill.
- * @param props - the closing turn (spread from the chain owner), Chat selector, projection seat, namespace scope, and locale.
+ * @param props - the completed turn (spread from the row's owner share), Chat selector, namespace scope, and locale.
  * @returns the pill and its dialog, or null while the turn carries no accounting.
  */
-export function TurnCostMeter({ turn: location, useChat, useProjection, useBilling, t }: TurnCostMeterProps) {
+export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCostMeterProps) {
   // The node store, not the legacy compatibility slice: the turn-tail payload
-  // lives only in the materialized Chat nodes, and the projection is the
-  // fallback for a turn whose assistant rows left the loaded window.
+  // lives only in the materialized Chat nodes, and it is the one per-turn total
+  // the durable log proves. The session projection is deliberately not a
+  // fallback — it is a session-wide running total, so reading it here would
+  // print the whole session as this one turn's cost.
   const nodes = useChat(snapshot => snapshot.nodes.values())
   const settings = useBilling(snapshot => snapshot.value)
-  const sessionUsage = useProjection('tokenUsage')
-  const selection = useProjection('modelSelection')
   const seat = useStatDialog()
   const turn = location.turn
   let usage: TurnTailChatData['tokenUsage']
@@ -164,9 +130,9 @@ export function TurnCostMeter({ turn: location, useChat, useProjection, useBilli
     usage = data.tokenUsage
     break
   }
-  // A turn whose payload left the loaded window, or whose rows were interrupted
-  // before any step settled, still has the session's running total to price.
-  usage ??= projectionUsage(sessionUsage, selection)
+  // A turn whose accounting is incomplete — its events paged out, an attempt
+  // that never settled — carries no figure here, exactly as its own Turn-usage
+  // pill carries none.
   if (usage === undefined) return null
 
   const rates = settings?.models ?? {}

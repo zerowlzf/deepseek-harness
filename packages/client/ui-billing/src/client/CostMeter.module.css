@@ -1,20 +1,18 @@
 /* Billing figures inside the shipped composer stats row, wearing the same
-   13/20 tertiary tier as the pills beside them. The row owns placement, the
-   separator, and wrapping; this module owns only the pills' own skin, so a
-   contribution cannot move the row it joined.
+   13/20 tertiary tier as the pills beside them. The row owns placement and
+   wrapping; this module owns only the pills' own skin, so a contribution cannot
+   move the row it joined.
 
-   The row is width-bound: at the 680px clamp its content box holds 616px, and
-   the shipped pills plus the divider already spend 409 of that with the row's
-   own gaps. These two figures therefore stay narrow — two bare amounts, a 10px
-   gap matching the shipped row's own rhythm, and no icon chrome — because a
-   wider pair would push the row onto a second line instead of extending the one
-   it belongs to. Each figure states what it is through its accessible name and
-   hover title. */
+   The row spaces every child with its own 12px gap, so these two figures use
+   that same gap between themselves: one rhythm across the whole line. Their
+   meaning rides the icons and each figure's accessible name and hover title
+   rather than a word, which keeps the pair narrow — the row is width-bound, and
+   at the 680px clamp its content box holds 616px. */
 
 .root {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 

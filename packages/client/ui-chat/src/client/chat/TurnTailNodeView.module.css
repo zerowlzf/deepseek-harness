@@ -10,3 +10,13 @@
   margin-top: 4px;
   margin-left: -6px;
 }
+
+/* Trailing figures join the stat-pill cluster: the Turn-usage and Turn-time
+   pills rebate 6px of the row's 8px gap between themselves so the pair reads as
+   one cluster, and a figure placed after them rebates the same, so every pair in
+   the row reads at one rhythm. The hole's anchor is `display: contents`, which
+   is why the rebate lands on the contribution's own root rather than on the
+   anchor; with no pill ahead of it, the row's plain gap stands unchanged. */
+.actions > span + [data-slot='conversation.chat.turn-stats'] > * {
+  margin-left: -6px;
+}
