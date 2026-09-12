@@ -87,17 +87,18 @@ describe('turn splits', () => {
     uncachedInputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0,
   })
 
-  it('keeps per-attempt buckets when the attempts account for the total', () => {
+  it('sums one turn’s attempts per route, in first-billed order', () => {
     const usage = {
       uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     const rows = turnRouteUsage(usage, [
       { route: 'a/m', buckets: turnBuckets(10, 2) },
-      { route: 'b/m', buckets: turnBuckets(20, 3) },
+      { route: 'b/m', buckets: turnBuckets(5, 1) },
+      { route: 'a/m', buckets: turnBuckets(15, 2) },
     ])
     expect(rows).toEqual([
-      { route: 'a/m', buckets: turnBuckets(10, 2) },
-      { route: 'b/m', buckets: turnBuckets(20, 3) },
+      { route: 'a/m', buckets: turnBuckets(25, 4) },
+      { route: 'b/m', buckets: turnBuckets(5, 1) },
     ])
   })
 
