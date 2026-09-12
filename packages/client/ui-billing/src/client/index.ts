@@ -26,11 +26,11 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { NS, parseRate, RATE_FIELDS, type BillingSettings } from '../settings.ts'
+import { NS, type BillingSettings } from '../settings.ts'
 import type { BillingInjected } from './face.ts'
 import { LOCALE_NS, en, zh, type BillingKey, type BillingTranslate } from './locales.ts'
+import { rateOps } from './rate-ops.ts'
 import { providerRoutes, type ProviderRouteGroup } from './routes.ts'
 import { SessionCostMeter } from './CostMeter.tsx'
 import { TurnCostMeter } from './TurnCostMeter.tsx'
@@ -110,23 +110,21 @@ export function apply(ctx: ClientContext): void {
   }, 'ui-billing: provider directory invalidations')
 
   /**
-   * Write one route's three fields, or drop the row when every field is empty.
+   * Write one route's rates, or drop the row when the user emptied it.
    * @param route - the `provider/model` key to write.
-   * @param fields - typed values by field name; an empty or unparsable field is
-   * left out of the write, exactly as the page's draft table leaves it.
+   * @param peak - typed peak-window values by field name.
+   * @param offPeak - typed off-peak-window values by field name.
    * @returns settlement after the namespace commits the change.
    */
-  const saveRate = async (route: string, fields: Readonly<Record<string, string>>): Promise<void> => {
-    const ops: SettingsPathOpView[] = []
-    for (const field of RATE_FIELDS) {
-      const parsed = parseRate(fields[field] ?? '')
-      if (parsed === undefined) continue
-      if ((fields[field] ?? '').trim() === '' && scope.getSnapshot().value?.models[route] === undefined) continue
-      ops.push({ op: 'set', path: ['models', route, field], value: parsed })
-    }
-    await scope.mutate(ops.length === 0
-      ? [{ op: 'unset', path: ['models', route] }]
-      : ops)
+  const saveRate = async (
+    route: string,
+    peak: Readonly<Record<string, string>>,
+    offPeak: Readonly<Record<string, string>>,
+  ): Promise<void> => {
+    const ops = rateOps(route, peak, offPeak, scope.getSnapshot().value?.models[route])
+    // No operations means the typed text described no change: a figure that
+    // does not parse writes nothing rather than clearing the stored row.
+    if (ops.length > 0) await scope.mutate(ops)
   }
 
   /**

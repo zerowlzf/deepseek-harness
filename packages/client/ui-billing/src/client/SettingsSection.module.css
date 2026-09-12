@@ -125,6 +125,26 @@
   gap: 8px;
 }
 
+/* One price window's three fields. A route may publish one price or two, so
+   both windows are always offered and the off-peak placeholders say what an
+   empty band means: the same figure as the peak one. */
+.band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.bandLabel {
+  box-sizing: border-box;
+  min-width: 60px;
+  padding-bottom: 5px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 .field {
   display: flex;
   flex-direction: column;

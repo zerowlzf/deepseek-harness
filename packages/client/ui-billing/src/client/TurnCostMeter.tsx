@@ -13,12 +13,12 @@ import { Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChatConversationViewNode, TurnTailChatData } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { DEFAULT_CURRENCY, routeKey, type BillingSettings, type ModelRate } from '../settings.ts'
+import { DEFAULT_CURRENCY, pricesByWindow, routeKey, type BillingSettings, type ModelRate } from '../settings.ts'
 import type { BillingInjected } from './face.ts'
 import { LOCALE_NS } from './locales.ts'
 import { effectiveRates } from './official-rates.ts'
-import { turnCost, turnRouteUsage, turnRoutes, type TurnBuckets, type TurnRouteUsage } from './cost.ts'
-import { formatAmount } from './format.ts'
+import { turnCost, turnRouteUsage, turnRoutes, type TurnAttempt, type TurnRouteUsage } from './cost.ts'
+import { formatAmount, windowKey } from './format.ts'
 import { IconCoinOutline16 } from './icons.tsx'
 import { currencyOf } from './CostMeter.tsx'
 import { MEASURE_STYLE, useStatDialog } from './stat-dialog.ts'
@@ -39,25 +39,23 @@ export type TurnCostMeterProps =
   & InjectFace<BillingInjected>
   & PropsLocale<typeof LOCALE_NS>
 
-/** One attempt's billed buckets under the route that produced it. */
-export interface AttemptUsage {
-  readonly route: string
-  readonly buckets: TurnBuckets
-}
-
 /** Read one finite number out of a provider-reported usage payload. */
 function count(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
 }
 
 /**
- * Read the loaded attempts of one turn, route by route.
+ * Read the loaded attempts of one turn, with the moment each settled.
+ *
+ * The settle time is what places an attempt in a price window: it is the only
+ * instant the durable log states for an attempt, and the tokens were spent
+ * during the request that ended there.
  * @param nodes - the loaded Chat nodes.
  * @param turn - the turn to collect.
- * @returns one entry per assistant attempt that reported both usage and a route.
+ * @returns one entry per assistant attempt that reported usage, a route, and a time.
  */
-export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: number): AttemptUsage[] {
-  const attempts: AttemptUsage[] = []
+export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: number): TurnAttempt[] {
+  const attempts: TurnAttempt[] = []
   for (const node of nodes) {
     // The assistant renderer kind, which is one row per settled or interrupted
     // Assistant step: the per-attempt accounting a turn is billed for.
@@ -66,6 +64,7 @@ export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: num
       readonly turn?: unknown
       readonly finalNode?: {
         readonly usage?: unknown
+        readonly time?: unknown
         readonly provenance?: { readonly provider?: unknown; readonly model?: unknown }
       }
     }
@@ -77,8 +76,11 @@ export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: num
     const model = finalNode?.provenance?.model
     if (typeof provider !== 'string' || provider.length === 0) continue
     if (typeof model !== 'string' || model.length === 0) continue
+    const at = finalNode?.time
+    if (typeof at !== 'number' || !Number.isFinite(at)) continue
     attempts.push({
       route: routeKey(provider, model),
+      at,
       buckets: {
         uncachedInputTokens: count(Reflect.get(usage, 'inputTokens')),
         outputTokens: count(Reflect.get(usage, 'outputTokens')),
@@ -90,15 +92,19 @@ export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: num
   return attempts
 }
 
-/** Price one already-resolved route row. */
+/** Price one already-resolved charge row. */
 function rowCost(row: TurnRouteUsage, rates: NonNullable<BillingSettings['models']>): number {
   return turnCost([row], rates).total
 }
 
-/** One route's configured rate summary for the dialog's footnote. */
-function rateText(route: string, rate: ModelRate | undefined, t: TurnCostMeterProps['t']): string {
-  if (rate === undefined) return `${route}: ${t('pill.dialog.unpriced')}`
-  return `${route}: ${[rate.cacheHit, rate.cacheMiss, rate.output].map(value => String(value)).join(' / ')}`
+/** One route's rates for the window it was charged in, for the dialog's footnote. */
+function rateText(row: TurnRouteUsage, rate: ModelRate | undefined, t: TurnCostMeterProps['t']): string {
+  if (rate === undefined) return `${row.route}: ${t('pill.dialog.unpriced')}`
+  const band = row.window === 'offPeak' ? rate.offPeak ?? rate : rate
+  const figures = [band.cacheHit, band.cacheMiss, band.output].map(value => String(value)).join(' / ')
+  return pricesByWindow(rate)
+    ? `${row.route} · ${t(windowKey(row.window))}: ${figures}`
+    : `${row.route}: ${figures}`
 }
 
 /**
@@ -117,11 +123,13 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
   const seat = useStatDialog()
   const turn = location.turn
   let usage: TurnTailChatData['tokenUsage']
+  let closedAt = 0
   for (const node of nodes) {
     if (node.kind !== 'turn-tail') continue
     const data = node.data as Partial<TurnTailChatData>
     if (data.turn !== turn) continue
     usage = data.tokenUsage
+    closedAt = typeof data.time === 'number' ? data.time : 0
     break
   }
   // A turn whose accounting is incomplete — its events paged out, an attempt
@@ -129,9 +137,9 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
   // pill carries none.
   if (usage === undefined) return null
 
-  const rates = effectiveRates(settings?.models)
+  const rates = effectiveRates(settings?.models, settings?.official ?? null)
   const attempts = attemptsOf(nodes, turn)
-  const rows = turnRouteUsage(usage, attempts)
+  const rows = turnRouteUsage(usage, attempts, rates, closedAt)
   const cost = turnCost(rows, rates)
   // A turn whose accounting names several routes and whose attempts are no
   // longer loaded cannot be split: the figure is withheld and the dialog names
@@ -177,8 +185,13 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
           <div className={dialogCss.titleRule} aria-hidden />
           <dl className={dialogCss.details} data-billing-turn-routes>
             {rows.map(row => (
-              <Fragment key={row.route}>
-                <dt className={dialogCss.route}>{row.route}</dt>
+              <Fragment key={`${row.route}\u0000${row.window}`}>
+                <dt className={dialogCss.route}>
+                  {row.route}
+                  {pricesByWindow(rates[row.route]) && (
+                    <span className={dialogCss.window}>{t(windowKey(row.window))}</span>
+                  )}
+                </dt>
                 <dd>
                   {rates[row.route] === undefined
                     ? t('pill.dialog.unpriced')
@@ -189,7 +202,7 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
           </dl>
           {rows.length > 0 && (
             <div className={dialogCss.note}>
-              {rows.map(row => rateText(row.route, rates[row.route], t)).join(' · ')}
+              {rows.map(row => rateText(row, rates[row.route], t)).join(' · ')}
             </div>
           )}
           {/* One reason per dialog, so a withheld figure always says why. */}

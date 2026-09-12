@@ -420,12 +420,16 @@ export interface Config {
   currency: string
   /** Delay between balance reads; `0` reads once at startup and schedules no further read. */
   refreshIntervalMs: number
+  /** Published price page rates are read from. */
+  pricingUrl: string
+  /** Delay between price reads; `0` reads once at startup and schedules no further read. */
+  pricingRefreshIntervalMs: number
   /** Whole-request deadline for one read. */
   requestTimeoutMs: number
 }
 ```
 
-来源：[`packages/client/ui-billing/src/index.ts:35`](../packages/client/ui-billing/src/index.ts)
+来源：[`packages/client/ui-billing/src/index.ts:37`](../packages/client/ui-billing/src/index.ts)
 
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 

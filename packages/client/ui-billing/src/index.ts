@@ -1,12 +1,13 @@
 /**
  * Billing plugin, Host half: owns the `ui-billing` settings namespace and keeps
- * its DeepSeek balance cache fresh.
+ * its two account reads fresh.
  *
  * The namespace is the whole Host surface. Rates are user configuration the
- * browser writes through the settings Remote; the balance is a Host read the
- * browser displays from the same value. Nothing here is model-visible and no
- * route is registered, so mounting this half only adds account facts to the
- * settings document.
+ * browser writes through the settings Remote; the balance and the published
+ * price table are reads of the provider's own pages, which the browser displays
+ * from the same value. Nothing here is model-visible and no route is
+ * registered, so mounting this half only adds account facts to the settings
+ * document.
  *
  * @module @deepseek-ai/dsh-client-ui-billing
  */
@@ -21,7 +22,8 @@ import type {} from '@deepseek-ai/cordis-plugin-timer'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, readBalance } from './account.ts'
-import { BillingSettingsSchema, DEFAULT_CURRENCY, NS } from './settings.ts'
+import { DEFAULT_PRICING_URL, readPrices } from './published-prices.ts'
+import { BillingSettingsSchema, DEFAULT_CURRENCY, NS, type BillingSettings } from './settings.ts'
 
 /**
  * Required services: the namespace owner, the refresh timer, and the credential
@@ -41,6 +43,10 @@ export interface Config {
   currency: string
   /** Delay between balance reads; `0` reads once at startup and schedules no further read. */
   refreshIntervalMs: number
+  /** Published price page rates are read from. */
+  pricingUrl: string
+  /** Delay between price reads; `0` reads once at startup and schedules no further read. */
+  pricingRefreshIntervalMs: number
   /** Whole-request deadline for one read. */
   requestTimeoutMs: number
 }
@@ -51,13 +57,15 @@ export const Config: Schema<Config> = Schema.object({
   baseURL: Schema.string().default(DEFAULT_BASE_URL),
   currency: Schema.string().default(DEFAULT_CURRENCY),
   refreshIntervalMs: Schema.natural().default(300_000),
+  pricingUrl: Schema.string().default(DEFAULT_PRICING_URL),
+  pricingRefreshIntervalMs: Schema.natural().default(86_400_000),
   requestTimeoutMs: Schema.natural().default(15_000),
 })
 
 /**
- * Register the namespace and start the balance refresh chain.
+ * Register the namespace and start both refresh chains.
  * @param ctx - Host context carrying the settings and timer services.
- * @param config - endpoint, credential, currency, and timing values.
+ * @param config - endpoints, credential, currency, and timing values.
  */
 export function apply(ctx: Context, config: Config): void {
   const scope = ctx.settings.register(NS, BillingSettingsSchema)
@@ -75,16 +83,29 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   let stopped = false
-  let pending: (() => void) | undefined
-  const schedule = (delayMs: number): void => {
+  const armed = new Set<() => void>()
+
+  /** Arm one chain's next tick, unless the plugin stopped or configured it off. */
+  const schedule = (delayMs: number, run: () => Promise<void>): void => {
     if (stopped || delayMs <= 0) return
-    pending = timer.timeout(() => {
-      pending = undefined
-      void refresh()
+    const handle = timer.timeout(() => {
+      armed.delete(handle)
+      void run()
     }, delayMs)
+    armed.add(handle)
   }
 
-  const refresh = async (): Promise<void> => {
+  /** Commit one read's result. A refused write leaves the previous value in place. */
+  const commit = async (patch: Partial<BillingSettings>): Promise<void> => {
+    try {
+      await scope.update(patch)
+    } catch (error: unknown) {
+      ctx.logger.warn('ui-billing: settings write failed')
+      ctx.logger.warn(error)
+    }
+  }
+
+  const refreshBalance = async (): Promise<void> => {
     const result = await readBalance({
       baseURL: config.baseURL,
       apiKeyEnv: config.apiKeyEnv,
@@ -94,24 +115,42 @@ export function apply(ctx: Context, config: Config): void {
     if (stopped) return
     // A failed refresh keeps the previous snapshot: a stale amount with its
     // timestamp is more useful than an empty field, and the reason says why.
-    try {
-      await scope.update(result.ok
-        ? { cache: result.balance, cacheError: null }
-        : { cacheError: result.failure })
-    } catch (error: unknown) {
-      // A refused write leaves the previous cache in place; the next tick retries.
-      ctx.logger.warn('ui-billing: balance cache write failed')
-      ctx.logger.warn(error)
-    }
-    schedule(config.refreshIntervalMs)
+    await commit(result.ok
+      ? { cache: result.balance, cacheError: null }
+      : { cacheError: result.failure })
+    schedule(config.refreshIntervalMs, refreshBalance)
+  }
+
+  const refreshPrices = async (): Promise<void> => {
+    const result = await readPrices({
+      url: config.pricingUrl,
+      currency: config.currency,
+      timeoutMs: config.requestTimeoutMs,
+    })
+    if (stopped) return
+    // Prices move far less often than a balance does, and a failed read keeps
+    // the previous table: the shipped snapshot still prices the official routes.
+    await commit(result.ok
+      ? {
+        official: {
+          models: result.prices.models,
+          currency: result.prices.currency,
+          at: Date.now(),
+          source: config.pricingUrl,
+        },
+        officialError: null,
+      }
+      : { officialError: result.failure })
+    schedule(config.pricingRefreshIntervalMs, refreshPrices)
   }
 
   ctx.effect(() => {
-    void refresh()
+    void refreshBalance()
+    void refreshPrices()
     return () => {
       stopped = true
-      pending?.()
-      pending = undefined
+      for (const handle of armed) handle()
+      armed.clear()
     }
-  }, 'ui-billing: balance refresh chain')
+  }, 'ui-billing: account reads')
 }

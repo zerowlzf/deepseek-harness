@@ -28,6 +28,7 @@ import { SessionCostMeter, currencyOf, freshness, groupSteps } from '../src/clie
 import { TurnCostMeter, attemptsOf } from '../src/client/TurnCostMeter.tsx'
 import { BillingSection } from '../src/client/SettingsSection.tsx'
 import { apply, inject } from '../src/client/index.ts'
+import { rateOps } from '../src/client/rate-ops.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 const t = makeTranslate(en, zh)
@@ -38,16 +39,24 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function snapshot(partial: Partial<SettingsScopeSnapshot<BillingSettings>> = {}): SettingsScopeSnapshot<BillingSettings> {
+/** Snapshot fields a spec may override; the namespace value may be partial. */
+type SnapshotParts =
+  & Partial<Omit<SettingsScopeSnapshot<BillingSettings>, 'value'>>
+  & { readonly value?: Partial<BillingSettings> }
+
+function snapshot(partial: SnapshotParts = {}): SettingsScopeSnapshot<BillingSettings> {
+  const { value, ...rest } = partial
   return {
     status: 'ready',
-    value: { currency: DEFAULT_CURRENCY, models: {}, cache: null, cacheError: null },
+    value: {
+      currency: DEFAULT_CURRENCY, models: {}, cache: null, cacheError: null, official: null, officialError: null, ...value,
+    },
     base: undefined,
     user: undefined,
     revision: 1,
     writable: true,
     mode: 'host',
-    ...partial,
+    ...rest,
   }
 }
 
@@ -134,6 +143,9 @@ function projection(values: Record<string, unknown>) {
 }
 
 const FLASH_RATES = { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 }
+
+/** A moment inside the published peak window, so a windowed row is deterministic. */
+const AT = Date.UTC(2024, 0, 1, 1, 0)
 
 describe('currency selection', () => {
   it('uses the account currency, then the configured one', () => {
@@ -346,6 +358,7 @@ describe('turn cost row', () => {
       visibility: 'visible', id: 'turn-tail',
       data: {
         turn: 1,
+        time: AT,
         tokenUsage: {
           uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, totalTokens: 2_000_000,
           cacheReadTokens: 0, cacheWriteTokens: 0,
@@ -360,6 +373,7 @@ describe('turn cost row', () => {
         turn: 1,
         finalNode: {
           usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+          time: AT,
           provenance: { provider: 'bai', model: 'glm-5.3-flash' },
         },
       },
@@ -373,6 +387,7 @@ describe('turn cost row', () => {
         turn: 1,
         finalNode: {
           usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
+          time: AT,
           provenance: { provider: 'x', model: 'other' },
         },
       },
@@ -384,6 +399,7 @@ describe('turn cost row', () => {
       visibility: 'visible', id: 'turn-tail-3',
       data: {
         turn: 3,
+        time: AT,
         tokenUsage: {
           uncachedInputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000,
           cacheReadTokens: 0, cacheWriteTokens: 0,
@@ -398,6 +414,7 @@ describe('turn cost row', () => {
         turn: 3,
         finalNode: {
           usage: { inputTokens: 1_000_000, outputTokens: 0 },
+          time: AT,
           provenance: { provider: 'x', model: 'other' },
         },
       },
@@ -408,18 +425,40 @@ describe('turn cost row', () => {
     return select({ nodes: { values: () => nodes } })
   }
 
-  it('reads each attempt of the turn', () => {
+  it('reads each attempt of the turn, with the moment it settled', () => {
     expect(attemptsOf(nodes, 1)).toEqual([
       {
         route: 'bai/glm-5.3-flash',
+        at: AT,
         buckets: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
       },
       {
         route: 'x/other',
+        at: AT,
         buckets: { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 0 },
       },
     ])
     expect(attemptsOf(nodes, 2)).toEqual([])
+  })
+
+  it('skips an attempt whose node carries no settle time', () => {
+    // Without a time there is no window to charge the attempt in, so it is not
+    // evidence: the turn's own accounting still prices it when one route is
+    // named, and is withheld when several are.
+    const timeless = [
+      {
+        key: 'assistant-1', kind: 'assistant-step', target: 'chat', anchorSeq: 2, location: { kind: 'session' },
+        visibility: 'visible', id: 'assistant-1',
+        data: {
+          turn: 1,
+          finalNode: {
+            usage: { inputTokens: 1_000, outputTokens: 1_000 },
+            provenance: { provider: 'bai', model: 'glm-5.3-flash' },
+          },
+        },
+      },
+    ] as unknown as readonly ChatConversationViewNode[]
+    expect(attemptsOf(timeless, 1)).toEqual([])
   })
 
   it('renders the turn total and breaks it down per route', () => {
@@ -618,25 +657,44 @@ describe('settings page', () => {
     // A closed card summarises what it holds: two models, one of them priced.
     expect(screen.getByText('2 models')).toBeDefined()
     expect(screen.getByText('1 priced')).toBeDefined()
-    expect(screen.queryByLabelText('bai/glm-5.3-flash Cache hit')).toBeNull()
+    expect(screen.queryByLabelText('bai/glm-5.3-flash peak Cache hit')).toBeNull()
 
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
-    const saved = screen.getByLabelText('bai/glm-5.3-flash Cache hit') as HTMLInputElement
+    const saved = screen.getByLabelText('bai/glm-5.3-flash peak Cache hit') as HTMLInputElement
     expect(saved.value).toBe('0.15')
-    const blank = screen.getByLabelText('bai/qwen3.8-flash Cache hit') as HTMLInputElement
+    const blank = screen.getByLabelText('bai/qwen3.8-flash peak Cache hit') as HTMLInputElement
     expect(blank.value).toBe('')
     // The control reads as its opposite state while the card is open.
     fireEvent.click(screen.getByLabelText('Collapse rates for bai'))
-    expect(screen.queryByLabelText('bai/glm-5.3-flash Cache hit')).toBeNull()
+    expect(screen.queryByLabelText('bai/glm-5.3-flash peak Cache hit')).toBeNull()
   })
 
   it('shows the published official price as the fallback a route is billed at', async () => {
     // The official provider is configured by the deployment rather than by the
     // user layer, and its model carries no stored rate: the card is priced by
     // the published table, and the fields show it as the placeholder the user
-    // overrides.
+    // overrides, one row of fields per price window.
     const stub = stubSettingsScope<BillingSettings>()
-    stub.publish(snapshot())
+    stub.publish(snapshot({
+      value: {
+        currency: 'CNY',
+        models: {},
+        cache: null,
+        cacheError: null,
+        official: {
+          models: {
+            'deepseek-v4-flash': {
+              cacheHit: 0.04, cacheMiss: 2, output: 8,
+              offPeak: { cacheHit: 0.02, cacheMiss: 1, output: 4 },
+            },
+          },
+          currency: 'CNY',
+          at: Date.now(),
+          source: 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/',
+        },
+        officialError: null,
+      },
+    }))
     const remote = {
       llm: {
         listProviders: () => Promise.resolve({ ok: true, value: [{ id: 'deepseek-official', name: 'DeepSeek' }] }),
@@ -667,11 +725,46 @@ describe('settings page', () => {
 
     await screen.findByText('DeepSeek')
     expect(screen.getByText('1 priced')).toBeDefined()
+    // The published table the Host read is stated on its own card, with where
+    // it came from.
+    const card = document.querySelector('[data-billing-official-card]')
+    expect(card?.textContent).toContain('Published DeepSeek prices')
+    expect(card?.textContent).toContain('1 models')
+    expect(card?.textContent).toContain('api-docs.deepseek.com')
+    // The rates section names the window in force, so the two rows of fields
+    // below it are read against the figure the provider charges now.
+    expect(screen.getByText(/Peak hours are Beijing time/)).toBeDefined()
+
     fireEvent.click(screen.getByLabelText('Edit rates for deepseek-official'))
-    const hit = screen.getByLabelText('deepseek-official/deepseek-v4-flash Cache hit') as HTMLInputElement
+    const hit = screen.getByLabelText('deepseek-official/deepseek-v4-flash peak Cache hit') as HTMLInputElement
     expect(hit.value).toBe('')
-    expect(hit.placeholder).toBe('0.021')
+    expect(hit.placeholder).toBe('0.04')
+    const offPeak = screen.getByLabelText('deepseek-official/deepseek-v4-flash off-peak Cache hit') as HTMLInputElement
+    expect(offPeak.placeholder).toBe('0.02')
     expect(screen.getByText('default rate')).toBeDefined()
+  })
+
+  it('reports why the Host could not read the published prices', async () => {
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot({
+      value: {
+        currency: 'CNY',
+        models: {},
+        cache: null,
+        cacheError: null,
+        official: null,
+        officialError: { kind: 'currency', found: 'USD', expected: 'CNY' },
+      },
+    }))
+    const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
+    const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
+    render(<BillingSection {...seats()} {...face} t={t} />)
+
+    const card = document.querySelector('[data-billing-official-card]')
+    expect(card?.textContent).toContain('Not read')
+    expect(card?.textContent)
+      .toContain('The published price page states USD while this document prices in CNY, so it was not adopted')
+    expect(card?.textContent).toContain('No published price has been read yet')
   })
 
   it('queues one path-addressed write per edited field', async () => {
@@ -683,17 +776,22 @@ describe('settings page', () => {
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
 
-    const hit = screen.getByLabelText('bai/glm-5.3-flash Cache hit')
+    const hit = screen.getByLabelText('bai/glm-5.3-flash peak Cache hit')
     fireEvent.change(hit, { target: { value: '0.15' } })
-    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash Cache miss'), { target: { value: '4.5' } })
-    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash Output'), { target: { value: '13.5' } })
+    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash peak Cache miss'), { target: { value: '4.5' } })
+    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash peak Output'), { target: { value: '13.5' } })
+    // A second band the user typed is carried as its own set of fields; the
+    // plugin decides what an entirely empty off-peak band means.
+    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash off-peak Output'), { target: { value: '6.75' } })
     fireEvent.click(screen.getAllByText('Save')[0] as HTMLElement)
     await act(async () => { await Promise.resolve() })
-    // The page hands the plugin the three typed fields; the plugin owns how
-    // they become settings writes.
-    expect(face2.saveRate).toHaveBeenCalledWith('bai/glm-5.3-flash', {
-      cacheHit: '0.15', cacheMiss: '4.5', output: '13.5',
-    })
+    // The page hands the plugin both bands as typed; the plugin owns how they
+    // become settings writes.
+    expect(face2.saveRate).toHaveBeenCalledWith(
+      'bai/glm-5.3-flash',
+      { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' },
+      { cacheHit: '', cacheMiss: '', output: '6.75' },
+    )
     expect(screen.getByText('Saved')).toBeDefined()
   })
 
@@ -737,7 +835,10 @@ describe('settings page', () => {
 
     fireEvent.change(field, { target: { value: 'custom/model' } })
     fireEvent.click(screen.getByText('Add'))
-    expect(screen.getByLabelText('custom/model Cache hit')).toBeDefined()
+    expect(screen.getByLabelText('custom/model peak Cache hit')).toBeDefined()
+    // Both windows are offered for a hand-added route too, so a provider that
+    // publishes two prices can be entered by hand.
+    expect(screen.getByLabelText('custom/model off-peak Cache hit')).toBeDefined()
   })
 
   it('keeps a configured provider that has no model list, so its routes can be added', async () => {
@@ -788,7 +889,9 @@ describe('settings page', () => {
     render(<BillingSection {...seats()} {...face6} t={t} />)
     await screen.findByText('This deployment stores settings read-only, so rates cannot be saved.')
     expect(screen.getByText('Balance read failed: HTTP 401')).toBeDefined()
-    expect(screen.getByText('Not read')).toBeDefined()
+    // Neither card has a figure to show: the balance and the published table
+    // are both unread.
+    expect(screen.getAllByText('Not read')).toHaveLength(2)
   })
 
   it('reloads the provider directory when the adapter roster changes', async () => {
@@ -848,16 +951,102 @@ describe('plugin registration', () => {
   })
 })
 
+describe('rate write operations', () => {
+  it('writes the peak band alone when no second band was typed', () => {
+    expect(rateOps('a/b', { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' }, {}, undefined)).toEqual([
+      { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
+      { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
+      { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
+    ])
+  })
+
+  it('writes a second band under its own path', () => {
+    // The blank field inside a typed band is a zero, and the band is written as
+    // a whole because the row carries none yet.
+    expect(rateOps(
+      'a/b',
+      { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' },
+      { cacheHit: '0.075', output: '6.75' },
+      undefined,
+    )).toEqual([
+      { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
+      { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
+      { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
+      { op: 'set', path: ['models', 'a/b', 'offPeak', 'cacheHit'], value: 0.075 },
+      { op: 'set', path: ['models', 'a/b', 'offPeak', 'output'], value: 6.75 },
+    ])
+  })
+
+  it('clears the stored second band when every off-peak field is emptied', () => {
+    expect(rateOps(
+      'a/b',
+      { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' },
+      {},
+      { cacheHit: 1, cacheMiss: 2, output: 3, offPeak: { cacheHit: 0.5, cacheMiss: 1, output: 1.5 } },
+    )).toEqual([
+      { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
+      { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
+      { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
+      { op: 'unset', path: ['models', 'a/b', 'offPeak'] },
+    ])
+  })
+
+  it('leaves a field the user never touched alone', () => {
+    // Only typed figures are written: blanking a field is not a way to store a
+    // zero, and opening a row and saving it unchanged writes what it showed.
+    expect(rateOps('a/b', { cacheHit: '0.15' }, {}, { cacheHit: 1, cacheMiss: 2, output: 3 }))
+      .toEqual([{ op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 }])
+    expect(rateOps('a/b', { cacheHit: '0' }, {}, undefined))
+      .toEqual([{ op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0 }])
+  })
+
+  it('reads an emptied row as its removal rather than a row of zeroes', () => {
+    expect(rateOps('a/b', {}, {}, undefined)).toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
+    expect(rateOps('a/b', {}, {}, { cacheHit: 1, cacheMiss: 2, output: 3 }))
+      .toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
+  })
+
+  it('writes nothing at all for text that does not parse', () => {
+    // A mistyped figure must not change the document, and in particular must
+    // not delete the stored row behind it.
+    expect(rateOps('a/b', { cacheHit: 'four' }, {}, { cacheHit: 1, cacheMiss: 2, output: 3 })).toEqual([])
+    expect(rateOps('a/b', { cacheHit: 'four', cacheMiss: '4.5', output: '13.5' }, {}, undefined))
+      .toEqual([
+        { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
+        { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
+      ])
+  })
+
+  it('trims the typed text before reading it', () => {
+    expect(rateOps('a/b', { cacheHit: ' 0.15 ' }, {}, undefined))
+      .toEqual([{ op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 }])
+    // Whitespace alone is an empty field, so a form holding only spaces is the
+    // same request as one holding nothing.
+    expect(rateOps('a/b', { cacheHit: '   ' }, {}, undefined)).toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
+  })
+})
+
 describe('shared helpers', () => {
-  it('aggregates accumulated stretches per route', () => {
+  it('aggregates accumulated stretches per route and window', () => {
     const buckets = { uncachedInputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 }
+    const banded = { ...FLASH_RATES, offPeak: { cacheHit: 0.075, cacheMiss: 2.25, output: 6.75 } }
     expect(groupSteps([
-      { route: 'a/b', buckets },
-      { route: 'a/b', buckets },
-      { route: 'x/y', buckets },
+      { route: 'a/b', at: AT, buckets },
+      { route: 'a/b', at: AT, buckets },
+      { route: 'x/y', at: AT, buckets },
     ], { 'a/b': FLASH_RATES })).toEqual([
-      { route: 'a/b', tokens: 2_000_000, cost: 9, priced: true },
-      { route: 'x/y', tokens: 1_000_000, cost: 0, priced: false },
+      { route: 'a/b', window: 'peak', tokens: 2_000_000, cost: 9, priced: true },
+      { route: 'x/y', window: 'peak', tokens: 1_000_000, cost: 0, priced: false },
+    ])
+    // A route that publishes two prices gets one row per window it was billed
+    // in, each priced at its own band.
+    const offPeakAt = Date.UTC(2024, 0, 1, 4, 0)
+    expect(groupSteps([
+      { route: 'a/b', at: AT, buckets },
+      { route: 'a/b', at: offPeakAt, buckets },
+    ], { 'a/b': banded })).toEqual([
+      { route: 'a/b', window: 'peak', tokens: 1_000_000, cost: 4.5, priced: true },
+      { route: 'a/b', window: 'offPeak', tokens: 1_000_000, cost: 2.25, priced: true },
     ])
   })
 

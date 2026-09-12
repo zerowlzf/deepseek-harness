@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package prices a Web session from rates the user owns. Its Host half registers the `ui-billing` settings namespace and caches one DeepSeek account balance in it; its browser half renders two cost figures under the composer, a cost pill in each completed Turn's own action row, and the Billing settings page that edits the rates. A route is a `provider/model` pair with three rates per million tokens: cached prompt input, uncached prompt input, and output. The balance is always the DeepSeek account's, whichever provider the current turn ran on.
+This package prices a Web session from rates the user owns. Its Host half owns the `ui-billing` settings namespace and caches two provider reads: the DeepSeek account balance and the published price table. Its browser half renders two cost figures under the composer, a cost pill in every completed Turn's row, and the Billing settings page that edits the rates. A route is a `provider/model` pair priced per million tokens in one or two daily windows — cached input, uncached input, output — at the peak rates and at a published off-peak band. The balance is always the DeepSeek account's.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Mount this plugin with the Web Chat surfaces present; the pills appear once a ra
 
 ### Rates
 
-The Billing page lists every provider the deployment can configure, with one row per model that provider's own settings profile declares. Each row carries the three rates for that `provider/model` route:
+The Billing page lists every provider the deployment can configure, with one row per model that provider's own settings profile declares. Each row carries the three rates for that `provider/model` route, once per price window:
 
 | Rate | Charges |
 |---|---|
@@ -37,7 +37,15 @@ The Billing page lists every provider the deployment can configure, with one row
 | Cache miss | Uncached prompt tokens, including cache writes. |
 | Output | Generated tokens, reasoning tokens included. |
 
-Rates are in the currency the balance reports, per million tokens. The official DeepSeek provider's routes carry published defaults, so an official session reads a cost out of the box: a stored row for that route overrides the shipped price, an eligible row shows the default as its field placeholder and a `default rate` badge, and clearing the row returns the route to the default. Every other route with no stored rates contributes to no total: the pills show a dash and the dialog names the route, rather than showing a number the configuration cannot support. Rates are stored in the namespace's `models` record under the key `provider/model`, so a hand edit of the settings document and the page are the same storage.
+Rates are in the currency the balance reports, per million tokens. The peak fields are the route's own price and every grade is charged at them outside the provider's off-peak window; the off-peak fields are a second band, and leaving all three empty means the route costs one figure at every hour, which is what a provider publishing a single price charges. DeepSeek publishes such a window — peak is Beijing time Monday–Friday 09:00–12:00 and 14:00–18:00, off-peak is half of it — so its routes carry both bands, and the page names the window in force above the cards.
+
+The official DeepSeek provider's routes carry published defaults, so an official session reads a cost out of the box: a stored row for that route overrides everything published, an eligible row shows the published figure as its field placeholder and a `default rate` badge, and clearing the row returns the route to it. Every other route with no stored rates contributes to no total: the pills show a dash and the dialog names the route, rather than showing a number the configuration cannot support. Rates are stored in the namespace's `models` record under the key `provider/model`, so a hand edit of the settings document and the page are the same storage.
+
+The Host refreshes the published figures from the provider's price page (`pricingUrl`, the Chinese documentation page by default) once a day (`pricingRefreshIntervalMs`; `0` reads once at startup). DeepSeek serves no price endpoint — its API answers completions, files, a model list of ids, and the balance — so the page's table is the only machine-readable statement of the prices. A read whose table cannot be recognized, or that states its figures in another currency than `currency`, is recorded as a structured failure: the shipped snapshot keeps pricing the official routes, and the Billing page says what happened.
+
+### Rate editing
+
+Saving a row writes the fields that hold a figure and leaves the rest of the document alone: an empty field is not a way to store a zero, and text that does not parse writes nothing at all rather than changing a row the user mistyped. Emptying every field of a row removes it, which is also what the row's own Clear control does. Emptying only the off-peak fields removes that band, so a route with one price stays a route with one price.
 
 ### Cost display
 
@@ -71,19 +79,36 @@ models:
     cacheHit: 0.15
     cacheMiss: 4.5
     output: 13.5
+  deepseek-official/deepseek-flash:
+    cacheHit: 0.04
+    cacheMiss: 2
+    output: 8
+    offPeak:
+      cacheHit: 0.02
+      cacheMiss: 1
+      output: 4
 cache:
   total: 12.75
   currency: CNY
   available: true
   at: 1787667264186
 cacheError: null
+official:
+  models:
+    deepseek-flash: { cacheHit: 0.04, cacheMiss: 2, output: 8, offPeak: { cacheHit: 0.02, cacheMiss: 1, output: 4 } }
+  currency: CNY
+  at: 1787667264186
+  source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+officialError: null
 ```
 
-`models` is user configuration and the Host only reads it. `cache` and `cacheError` are Host-owned: the Host half resolves the API key per read (the `credentials` seam first, then the process environment), calls `GET /user/balance` on the configured base URL, and writes the answer back into the namespace. The `credentials` service is a required injection, so the first read waits for the credential document instead of reporting a key the operator did store as missing. The read itself takes a key resolver rather than the context, so the plugin body owns the credential seam and the read stays one call that reaches no service. A failed read keeps the previous snapshot and records a structured reason — no key, an HTTP status, a transport failure, an unreadable payload — which the browser states in its own language, with the untranslatable detail appended as a second clause. The refresh chain re-arms itself after each settlement and stops with the plugin fiber.
+`models` is user configuration and the Host only reads it. `cache`, `official`, and their two error fields are Host-owned, and each is written by its own refresh chain. For the balance the Host resolves the API key per read (the `credentials` seam first, then the process environment), calls `GET /user/balance` on the configured base URL, and writes the answer back. The `credentials` service is a required injection, so the first read waits for the credential document instead of reporting a key the operator did store as missing. The balance read takes a key resolver rather than the context, so the plugin body owns the credential seam and the read stays one call that reaches no service. A failed read of either kind keeps the previous value and records a structured reason — no key, an HTTP status, a transport failure, an unreadable payload, and for prices a currency the document does not price in — which the browser states in its own language, with the untranslatable detail appended as a second clause. Each chain re-arms itself after its own settlement, on its own configured interval, and stops with the plugin fiber.
 
 ### Cost folds
 
 `tokenUsage` is a running total whose growth between two reads is exactly what one route was billed, so the session fold records one stretch per observed growth and prices each under its own route. Editing a rate reprices every stretch, and switching models starts a new stretch; neither loses history. The turn fold starts from the durable turn-tail accounting — the same evidence the shipped Turn-usage dialog shows — and attributes it across the routes its loaded attempts were billed on, charging any remainder (a retried attempt, or one whose message left the window) at the last route's rate so the priced total matches the tokens the provider reported. A turn whose accounting the loaded window lost carries no figure; the session projection is never substituted for it, because a session-wide total read as one turn's cost is simply wrong.
+
+Both folds also charge each stretch in the price window it happened in. The session fold stamps every observed growth with the clock at the moment it was observed, which is the window the provider was pricing while those tokens were produced; the turn fold stamps each attempt with the time its own settled message carries, and an attempt without one is not evidence at all. A route that publishes a single price is not split by window, because both bands hold the same figures.
 
 ### Registration
 
@@ -131,8 +156,11 @@ These limits define the current cost display. They are current package constrain
 - **The session total is attributed from the browser's first sight** — the running total a page first observes is priced under the route active then, because the routes of everything before it are not in the evidence a browser can read; only later growth is split per route. A reload mid-session therefore re-reads the whole total under the route in use at that moment.
 - **No figures appear before the shipped row does** — both composer figures ride ui-chat's stats row, which renders once the session has a step or billed tokens, so a brand-new session shows no balance until its first Turn. The per-Turn figure appears when that Turn closes, since the row itself is the shipped tail node's.
 - **Cache writes are charged as uncached input** — the three configured rates match how the DeepSeek adapters report usage, where a cache write arrives as prompt input. A provider that reports writes in their own bucket is charged that bucket's tokens at its cache-miss rate.
-- **Shipped official prices can age** — the published defaults are a snapshot of the provider's price list for the model ids the shipped adapter reports, and the page's fields are how a deployment corrects them. Nothing fetches a price feed, so a price change reaches this package as a code change.
-- **The balance is always the DeepSeek account's** — by design: the page compares spend against the one account the API can report. A deployment whose sessions never use the official provider still shows this balance, and the Host read is the only request this package makes.
+- **A stretch that crosses a price boundary is charged at one band** — the evidence is a stretch's own moment, not a per-token timestamp: the session fold takes the moment it observed the growth and the turn fold the moment an attempt settled. A Turn that spans 12:00 or 18:00 Beijing time is therefore split only when its attempts fall on either side of the boundary, and a long single attempt is charged at the band in force when it ended.
+- **The published figures come from a documentation page** — DeepSeek serves no price endpoint, so the Host parses the table on `pricingUrl`, and the shipped snapshot is what prices the official routes whenever that read fails or the page is redesigned. Prices the provider changed since the last successful read reach a session only after the next one, within `pricingRefreshIntervalMs`.
+- **A price page in another currency is refused** — the table states its figures in one currency, and the read is dropped with a named reason when it is not the one this document prices in, because mixing them would misprice every official route by the exchange rate. Point `pricingUrl` at the matching edition when changing `currency`.
+- **A route with only some fields filled is billed zero on the rest** — an empty field is never written, so a hand-typed row that names one figure and leaves the others empty carries the schema's zeros for them. Enter the figures a route actually bills, or clear the row to fall back on the published price.
+- **The balance is always the DeepSeek account's** — by design: the page compares spend against the one account the API can report. A deployment whose sessions never use the official provider still shows this balance, and the two Host reads are the only requests this package makes.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -141,7 +169,8 @@ These limits define the current cost display. They are current package constrain
 <summary>Working context for maintainers — click to expand</summary>
 
 - The per-turn node data lives only in the materialized Chat node store, not in the legacy compatibility slice the shipped stats row reads.
-- ui-chat's completed-Turn extension above the action row is a chain that elects one entry, so a contribution there is dropped for every Turn the shipped produced-files entry claims; the cost figure lives in the row's own list hole (`conversation.chat.turn-stats`) instead. The per-attempt node kind is `assistant-step`, and its `finalNode.provenance` is the route that attempt was billed on.
+- ui-chat's completed-Turn extension above the action row is a chain that elects one entry, so a contribution there is dropped for every Turn the shipped produced-files entry claims; the cost figure lives in the row's own list hole (`conversation.chat.turn-stats`) instead. The per-attempt node kind is `assistant-step`, and its `finalNode.provenance` and `finalNode.time` are the route and the moment that attempt was billed on.
+- The price-table fixture is the table the live documentation pages served, recorded verbatim, so `parsePricePage` is specified against the row spans, footnote markers, and unit suffixes it will actually meet. The Chinese edition is the default because it states its figures in the package's default currency; the English one is in the spec as the refused-currency case.
 - `BillingTranslate` stays declared locally while the props derive from `PropsLocale`: the framework's seat over a merged `LocaleNamespaceMap` accepts this dictionary's keys plus the shared common ones, which is assignable to the narrower local alias but not the reverse. The two-faces-in-one-package layout means `src/settings.ts` is compiled by the Host leaf and consumed by the Client leaf through the project reference.
 - The settings namespace (`ui-billing`) and the copy dictionary (`billing`) stay separately named: one identifier for both binds the scope to the dictionary, so every surface renders its unavailable state while the Host serves correct values.
 

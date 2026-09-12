@@ -76,6 +76,20 @@
   overflow-wrap: anywhere;
 }
 
+/* Price window a dialog row was charged in, trailing the route it belongs to.
+   The route name is data and stays verbatim; this is the copy that says which
+   band of its published prices the figure beside it came from. */
+.window {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 /* Secondary note under a section (freshness line, unpriced hint). */
 .note {
   margin-top: 10px;

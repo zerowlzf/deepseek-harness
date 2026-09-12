@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-client-ui-billing/format
  */
 
-import type { BalanceFailure } from '../settings.ts'
+import type { BalanceFailure, PriceFailure, PriceWindow } from '../settings.ts'
 import type { BillingTranslate } from './locales.ts'
 
 /** Currency symbol used when the provider reports a code this table does not carry. */
@@ -89,13 +89,40 @@ export function balanceFailureText(failure: BalanceFailure, t: BillingTranslate)
   }
 }
 
+/**
+ * Localized reason one price read produced no table.
+ *
+ * The page states its own currency, so a read of an edition that prices in
+ * another one is a failure with both codes named rather than a table silently
+ * mixed into figures of the wrong currency.
+ * @param failure - the structured reason the Host recorded.
+ * @param t - the surface's translate seat.
+ * @returns the display line, including the detail when the failure carried one.
+ */
+export function priceFailureText(failure: PriceFailure, t: BillingTranslate): string {
+  switch (failure.kind) {
+    case 'http': return t('price.failure.http', { status: failure.status })
+    case 'network': return withDetail(t('price.failure.network'), failure.detail, t)
+    case 'payload': return withDetail(t('price.failure.payload'), failure.detail, t)
+    case 'currency': return t('price.failure.currency', { found: failure.found, expected: failure.expected })
+  }
+}
+
 function withDetail(title: string, detail: string, t: BillingTranslate): string {
-  return detail === '' ? title : `${title} · ${t('balance.failure.detail', { detail })}`
+  return detail === '' ? title : `${title} · ${t('read.failure.detail', { detail })}`
+}
+
+/**
+ * Dictionary key naming one price window.
+ * @param window - the window a charge fell in, or the one in force now.
+ * @returns the key whose copy names it.
+ */
+export function windowKey(window: PriceWindow): 'window.peak' | 'window.offPeak' {
+  return window === 'peak' ? 'window.peak' : 'window.offPeak'
 }
 
 /** Relative age of one timestamp, for the balance freshness label. */
-export type AgeBucket =
-  | { readonly kind: 'justNow' }
+export type AgeBucket =  | { readonly kind: 'justNow' }
   | { readonly kind: 'minutes'; readonly count: number }
   | { readonly kind: 'hours'; readonly count: number }
   | { readonly kind: 'days'; readonly count: number }

@@ -7,16 +7,28 @@
 import { describe, expect, it } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ModelRate, RouteUsage } from '../src/settings.ts'
-import { parseRate, priceUsage, routeKey, splitRouteKey } from '../src/settings.ts'
+import { bandAt, bandFor, parseRate, priceUsage, priceWindowAt, routeKey, splitRouteKey } from '../src/settings.ts'
 import {
   bucketDelta, isEmptyBuckets, sessionCost, turnCost, turnRouteUsage,
-  turnRoutes, type SessionBuckets, type TurnRouteUsage,
+  turnRoutes, type SessionBuckets, type TurnAttempt, type TurnBuckets, type TurnRouteUsage,
 } from '../src/client/cost.ts'
-import { ageOf, balanceFailureText, currencySymbol, formatAmount, formatBalance } from '../src/client/format.ts'
+import {
+  ageOf, balanceFailureText, currencySymbol, formatAmount, formatBalance, priceFailureText, windowKey,
+} from '../src/client/format.ts'
 import { zh } from '../src/client/locales.ts'
 import { modelIdsOf, providerRoutes, valueAtPath } from '../src/client/routes.ts'
 
-const FLASH: ModelRate = { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 }
+/** One price at every hour: the row a provider publishing a single figure has. */
+const FLAT: ModelRate = { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 }
+
+/** The same row with an off-peak band at half those figures. */
+const BANDED: ModelRate = { ...FLAT, offPeak: { cacheHit: 0.075, cacheMiss: 2.25, output: 6.75 } }
+
+/** Beijing 09:00 on Monday 2024-01-01, the first minute of the daily peak window. */
+const PEAK_AT = Date.UTC(2024, 0, 1, 1, 0)
+
+/** Beijing 12:00 the same Monday, the first off-peak minute after the morning peak. */
+const OFF_PEAK_AT = Date.UTC(2024, 0, 1, 4, 0)
 
 function buckets(partial: Partial<SessionBuckets> = {}): SessionBuckets {
   return {
@@ -40,11 +52,58 @@ describe('rate rows', () => {
 describe('priceUsage', () => {
   it('charges each bucket at its own rate per million tokens', () => {
     const usage: RouteUsage = { cacheHitTokens: 1_000_000, cacheMissTokens: 1_000_000, outputTokens: 1_000_000 }
-    expect(priceUsage(FLASH, usage)).toBeCloseTo(0.15 + 4.5 + 13.5, 10)
+    expect(priceUsage(FLAT, usage)).toBeCloseTo(0.15 + 4.5 + 13.5, 10)
   })
 
   it('prices an empty bucket set at zero', () => {
-    expect(priceUsage(FLASH, { cacheHitTokens: 0, cacheMissTokens: 0, outputTokens: 0 })).toBe(0)
+    expect(priceUsage(FLAT, { cacheHitTokens: 0, cacheMissTokens: 0, outputTokens: 0 })).toBe(0)
+  })
+})
+
+describe('price windows', () => {
+  it('opens the peak window at Beijing 09:00 and closes it at 12:00', () => {
+    expect(priceWindowAt(PEAK_AT)).toBe('peak')
+    expect(priceWindowAt(PEAK_AT + 2 * 3_600_000)).toBe('peak')
+    expect(priceWindowAt(PEAK_AT + 3 * 3_600_000 - 1)).toBe('peak')
+    expect(priceWindowAt(OFF_PEAK_AT)).toBe('offPeak')
+  })
+
+  it('opens the afternoon peak at Beijing 14:00 and closes it at 18:00', () => {
+    expect(priceWindowAt(Date.UTC(2024, 0, 1, 6, 0))).toBe('peak')
+    expect(priceWindowAt(Date.UTC(2024, 0, 1, 9, 59))).toBe('peak')
+    expect(priceWindowAt(Date.UTC(2024, 0, 1, 10, 0))).toBe('offPeak')
+  })
+
+  it('is off-peak all weekend, Beijing time', () => {
+    // Saturday 2024-01-06 10:00 Beijing, an hour that is peak on a weekday.
+    expect(priceWindowAt(Date.UTC(2024, 0, 6, 2, 0))).toBe('offPeak')
+    // Sunday 2024-01-07 15:00 Beijing.
+    expect(priceWindowAt(Date.UTC(2024, 0, 7, 7, 0))).toBe('offPeak')
+    // The Friday before, at the same Beijing hour, is peak.
+    expect(priceWindowAt(Date.UTC(2024, 0, 5, 2, 0))).toBe('peak')
+  })
+
+  it('reads the window in Beijing rather than in the viewer time zone', () => {
+    // Beijing 09:00 on Monday is 01:00 UTC, which is still Sunday in the west.
+    expect(priceWindowAt(Date.UTC(2024, 0, 1, 1, 0))).toBe('peak')
+    expect(priceWindowAt(Date.UTC(2024, 0, 1, 0, 59))).toBe('offPeak')
+  })
+
+  it('selects the band a moment is charged at', () => {
+    expect(bandAt(BANDED, PEAK_AT)).toEqual(FLAT)
+    expect(bandAt(BANDED, OFF_PEAK_AT)).toEqual(BANDED.offPeak)
+    expect(bandFor(BANDED, 'offPeak')).toEqual(BANDED.offPeak)
+    expect(bandFor(BANDED, 'peak')).toEqual(FLAT)
+  })
+
+  it('charges a row with one price the same figure in either window', () => {
+    expect(bandAt(FLAT, PEAK_AT)).toEqual(FLAT)
+    expect(bandAt(FLAT, OFF_PEAK_AT)).toEqual(FLAT)
+  })
+
+  it('names each window through the dictionary', () => {
+    expect(windowKey('peak')).toBe('window.peak')
+    expect(windowKey('offPeak')).toBe('window.offPeak')
   })
 })
 
@@ -66,40 +125,84 @@ describe('session accumulation', () => {
 
   it('prices each stretch under its own route and skips unpriced ones', () => {
     const total = sessionCost([
-      { route: 'bai/glm-5.3-flash', buckets: buckets({ uncachedInputTokens: 1_000_000, outputTokens: 1_000_000 }) },
-      { route: 'bai/unpriced', buckets: buckets({ outputTokens: 1_000_000 }) },
-      { route: 'bai/glm-5.3-flash', buckets: buckets({ outputTokens: 1_000_000 }) },
-    ], { 'bai/glm-5.3-flash': FLASH })
+      {
+        route: 'bai/glm-5.3-flash',
+        at: PEAK_AT,
+        buckets: buckets({ uncachedInputTokens: 1_000_000, outputTokens: 1_000_000 }),
+      },
+      { route: 'bai/unpriced', at: PEAK_AT, buckets: buckets({ outputTokens: 1_000_000 }) },
+      { route: 'bai/glm-5.3-flash', at: PEAK_AT, buckets: buckets({ outputTokens: 1_000_000 }) },
+    ], { 'bai/glm-5.3-flash': FLAT })
     expect(total).toBeCloseTo(4.5 + 13.5 + 13.5, 10)
   })
 
   it('charges cache writes as uncached input', () => {
     const total = sessionCost(
-      [{ route: 'r', buckets: buckets({ cacheWriteTokens: 1_000_000 }) }],
-      { r: FLASH },
+      [{ route: 'r', at: PEAK_AT, buckets: buckets({ cacheWriteTokens: 1_000_000 }) }],
+      { r: FLAT },
     )
     expect(total).toBeCloseTo(4.5, 10)
+  })
+
+  it('charges each stretch at the band in force when it was observed', () => {
+    const total = sessionCost([
+      { route: 'r', at: PEAK_AT, buckets: buckets({ outputTokens: 1_000_000 }) },
+      { route: 'r', at: OFF_PEAK_AT, buckets: buckets({ outputTokens: 1_000_000 }) },
+      { route: 'flat', at: OFF_PEAK_AT, buckets: buckets({ outputTokens: 1_000_000 }) },
+    ], { r: BANDED, flat: FLAT })
+    expect(total).toBeCloseTo(13.5 + 6.75 + 13.5, 10)
   })
 })
 
 describe('turn splits', () => {
-  const turnBuckets = (uncachedInputTokens: number, outputTokens: number) => ({
+  const turnBuckets = (uncachedInputTokens: number, outputTokens: number): TurnBuckets => ({
     uncachedInputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0,
   })
+  const attempt = (route: string, buckets: TurnBuckets, at = PEAK_AT): TurnAttempt => ({ route, at, buckets })
 
   it('sums one turn’s attempts per route, in first-billed order', () => {
     const usage = {
       uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     const rows = turnRouteUsage(usage, [
-      { route: 'a/m', buckets: turnBuckets(10, 2) },
-      { route: 'b/m', buckets: turnBuckets(5, 1) },
-      { route: 'a/m', buckets: turnBuckets(15, 2) },
-    ])
+      attempt('a/m', turnBuckets(10, 2)),
+      attempt('b/m', turnBuckets(5, 1)),
+      attempt('a/m', turnBuckets(15, 2)),
+    ], { 'a/m': FLAT, 'b/m': FLAT }, PEAK_AT)
     expect(rows).toEqual([
-      { route: 'a/m', buckets: turnBuckets(25, 4) },
-      { route: 'b/m', buckets: turnBuckets(5, 1) },
+      { route: 'a/m', window: 'peak', buckets: turnBuckets(25, 4) },
+      { route: 'b/m', window: 'peak', buckets: turnBuckets(5, 1) },
     ])
+  })
+
+  it('gives one route one row per price window it was billed in', () => {
+    const usage = {
+      uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35, cacheReadTokens: 0, cacheWriteTokens: 0,
+    }
+    const rows = turnRouteUsage(usage, [
+      attempt('a/m', turnBuckets(10, 2), PEAK_AT),
+      attempt('a/m', turnBuckets(20, 3), OFF_PEAK_AT),
+    ], { 'a/m': BANDED }, PEAK_AT)
+    expect(rows).toEqual([
+      { route: 'a/m', window: 'peak', buckets: turnBuckets(10, 2) },
+      { route: 'a/m', window: 'offPeak', buckets: turnBuckets(20, 3) },
+    ])
+    // The off-peak row is charged at the half-price band, the peak row in full.
+    expect(turnCost(rows, { 'a/m': BANDED }).total).toBeCloseTo(
+      (10 * 4.5 + 2 * 13.5) / 1_000_000 + (20 * 2.25 + 3 * 6.75) / 1_000_000,
+      10,
+    )
+  })
+
+  it('keeps one row for a route that publishes a single price', () => {
+    const usage = {
+      uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35, cacheReadTokens: 0, cacheWriteTokens: 0,
+    }
+    const rows = turnRouteUsage(usage, [
+      attempt('a/m', turnBuckets(10, 2), PEAK_AT),
+      attempt('a/m', turnBuckets(20, 3), OFF_PEAK_AT),
+    ], { 'a/m': FLAT }, PEAK_AT)
+    expect(rows).toEqual([{ route: 'a/m', window: 'peak', buckets: turnBuckets(30, 5) }])
   })
 
   it('charges a retried attempt remainder at the last route', () => {
@@ -107,29 +210,32 @@ describe('turn splits', () => {
       uncachedInputTokens: 50, outputTokens: 9, totalTokens: 59, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     const rows = turnRouteUsage(usage, [
-      { route: 'a/m', buckets: turnBuckets(10, 2) },
-      { route: 'b/m', buckets: turnBuckets(20, 3) },
-    ])
+      attempt('a/m', turnBuckets(10, 2)),
+      attempt('b/m', turnBuckets(20, 3)),
+    ], { 'a/m': FLAT, 'b/m': FLAT }, PEAK_AT)
     expect(rows).toEqual([
-      { route: 'a/m', buckets: turnBuckets(10, 2) },
-      { route: 'b/m', buckets: turnBuckets(40, 7) },
+      { route: 'a/m', window: 'peak', buckets: turnBuckets(10, 2) },
+      { route: 'b/m', window: 'peak', buckets: turnBuckets(40, 7) },
     ])
   })
 
   it('has no rows without loaded attempts', () => {
     expect(turnRouteUsage({
       uncachedInputTokens: 1, outputTokens: 1, totalTokens: 2,
-    }, [])).toEqual([])
+    }, [], {}, PEAK_AT)).toEqual([])
   })
 
   it('prices an unattempted turn under its single named route', () => {
     // One named route is exact even with no surviving attempt: every billed
-    // attempt ran there.
+    // attempt ran there, and the turn's own close time places it in a window.
     const usage = {
       uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35,
       routes: [{ provider: 'a', model: 'm' }],
     }
-    expect(turnRouteUsage(usage, [])).toEqual([{ route: 'a/m', buckets: turnBuckets(30, 5) }])
+    expect(turnRouteUsage(usage, [], { 'a/m': BANDED }, PEAK_AT))
+      .toEqual([{ route: 'a/m', window: 'peak', buckets: turnBuckets(30, 5) }])
+    expect(turnRouteUsage(usage, [], { 'a/m': BANDED }, OFF_PEAK_AT))
+      .toEqual([{ route: 'a/m', window: 'offPeak', buckets: turnBuckets(30, 5) }])
   })
 
   it('declines a turn whose several routes have no surviving attempt', () => {
@@ -140,18 +246,19 @@ describe('turn splits', () => {
       uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35,
       routes: [{ provider: 'a', model: 'm' }, { provider: 'b', model: 'n' }],
     }
-    expect(turnRouteUsage(usage, [])).toEqual([])
-    expect(turnCost(turnRouteUsage(usage, []), { 'a/m': FLASH, 'b/n': FLASH }).total).toBe(0)
+    const rates = { 'a/m': FLAT, 'b/n': FLAT }
+    expect(turnRouteUsage(usage, [], rates, PEAK_AT)).toEqual([])
+    expect(turnCost(turnRouteUsage(usage, [], rates, PEAK_AT), rates).total).toBe(0)
   })
 
   it('prices priced rows, reports unpriced routes, and counts each route once', () => {
     const rows: TurnRouteUsage[] = [
-      { route: 'a/m', buckets: turnBuckets(1_000_000, 1_000_000) },
-      { route: 'x/m', buckets: turnBuckets(5, 5) },
-      { route: 'a/m', buckets: turnBuckets(1_000_000, 0) },
+      { route: 'a/m', window: 'peak', buckets: turnBuckets(1_000_000, 1_000_000) },
+      { route: 'x/m', window: 'peak', buckets: turnBuckets(5, 5) },
+      { route: 'a/m', window: 'offPeak', buckets: turnBuckets(1_000_000, 0) },
     ]
-    const cost = turnCost(rows, { 'a/m': FLASH })
-    expect(cost.total).toBeCloseTo(4.5 + 13.5 + 4.5, 10)
+    const cost = turnCost(rows, { 'a/m': BANDED })
+    expect(cost.total).toBeCloseTo(4.5 + 13.5 + 2.25, 10)
     expect(cost.priced).toEqual(['a/m'])
     expect(cost.unpriced).toEqual(['x/m'])
   })
@@ -209,6 +316,15 @@ describe('balance failure copy', () => {
       .toBe('余额读取失败：请求未能完成 · 详情：socket closed')
     expect(balanceFailureText({ kind: 'payload', detail: 'no balance_infos array' }, t))
       .toBe('余额读取失败：响应无法解析 · 详情：no balance_infos array')
+  })
+
+  it('states each published-price reason in the surface language', () => {
+    expect(priceFailureText({ kind: 'http', status: 502 }, t)).toBe('官方价格读取失败：HTTP 502')
+    expect(priceFailureText({ kind: 'network', detail: '' }, t)).toBe('官方价格读取失败：请求未能完成')
+    expect(priceFailureText({ kind: 'payload', detail: 'no price table on the page' }, t))
+      .toBe('官方价格读取失败：页面里没有可用的价格表 · 详情：no price table on the page')
+    expect(priceFailureText({ kind: 'currency', found: 'USD', expected: 'CNY' }, t))
+      .toBe('官方价格页面按 USD 计价，与当前币种 CNY 不一致，未采用')
   })
 })
 
