@@ -131,6 +131,9 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
         seat={costSeat}
         icon={<IconCoinOutline16 />}
         label={costLabel}
+        spokenLabel={priced
+          ? t('pill.spokenSessionCost', { amount: formatAmount(total, currency) })
+          : costLabel}
         dialogLabel={t('pill.dialog.costTitle')}
         onOpen={() => {
           // One exclusive slot: opening either pill closes the other's seat.
@@ -148,6 +151,9 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
         seat={balanceSeat}
         icon={<IconWalletOutline16 />}
         label={balanceLabel}
+        spokenLabel={balance === null
+          ? balanceLabel
+          : t('pill.spokenBalance', { amount: formatBalance(balance.total, balance.currency) })}
         dialogLabel={t('pill.dialog.balanceTitle')}
         onOpen={() => {
           costSeat.setOpen(false)
@@ -239,10 +245,17 @@ function RouteRows({ steps, rates, currency, t }: {
  * both dismissal paths close the panel they belong to; `onOpen` lets the row
  * keep its exclusive slot.
  */
-function Pill({ seat, icon, label, dialogLabel, onOpen, children }: {
+function Pill({ seat, icon, label, spokenLabel, dialogLabel, onOpen, children }: {
   seat: StatDialogSeat
+  /** Glyph shown in the pill and its dialog title. */
   icon: ReactNode
+  /** Visible pill text, kept to the figure: the row this joins is width-bound. */
   label: string
+  /**
+   * What the pill means, read out and shown on hover. The visible label is a
+   * bare figure, so the accessible name is where "this session" is stated.
+   */
+  spokenLabel: string
   dialogLabel: string
   onOpen: () => void
   children: ReactNode
@@ -254,7 +267,8 @@ function Pill({ seat, icon, label, dialogLabel, onOpen, children }: {
         className={css.pill}
         aria-haspopup="dialog"
         aria-expanded={seat.open}
-        aria-label={label}
+        aria-label={spokenLabel}
+        title={spokenLabel}
         onClick={() => {
           if (seat.open) {
             seat.setOpen(false)

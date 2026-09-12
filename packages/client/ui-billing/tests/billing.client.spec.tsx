@@ -147,9 +147,14 @@ describe('session cost pill', () => {
         t={t}
       />,
     )
-    expect(screen.getByText('¥18.00 this session')).toBeDefined()
-    expect(screen.getByText('Balance ¥12.75')).toBeDefined()
+    expect(screen.getByText('¥18.00')).toBeDefined()
+    // The visible text is the bare figure; the accessible name states what each
+    // figure is, which is what a reader hears and what hover shows. Both pills
+    // are reached by that name because the balance pill also carries its amount
+    // inside a localized label.
     expect(screen.getByLabelText('¥18.00 this session')).toBeDefined()
+    expect(screen.getByLabelText('DeepSeek account balance ¥12.75')).toBeDefined()
+    expect(screen.getByLabelText('DeepSeek account balance ¥12.75').textContent).toContain('12.75')
   })
 
   it('reprices when a rate is edited', async () => {
@@ -175,7 +180,7 @@ describe('session cost pill', () => {
         t={t}
       />,
     )
-    expect(screen.getByText('¥13.50 this session')).toBeDefined()
+    expect(screen.getByText('¥13.50')).toBeDefined()
     await act(async () => {
       stub.publish(snapshot({
         value: {
@@ -186,7 +191,7 @@ describe('session cost pill', () => {
         },
       }))
     })
-    expect(screen.getByText('¥20.00 this session')).toBeDefined()
+    expect(screen.getByText('¥20.00')).toBeDefined()
   })
 
   it('names an unpriced route instead of inventing a total', () => {
@@ -235,7 +240,7 @@ describe('session cost pill', () => {
         t={t}
       />,
     )
-    fireEvent.click(screen.getByLabelText('Balance $3.00'))
+    fireEvent.click(screen.getByLabelText('DeepSeek account balance $3.00'))
     const dialog = screen.getByRole('dialog', { name: 'DeepSeek account balance' })
     expect(within(dialog).getByText('Insufficient balance')).toBeDefined()
     expect(within(dialog).getByText('2 min ago')).toBeDefined()
@@ -284,7 +289,7 @@ describe('session cost pill', () => {
     )
     fireEvent.click(screen.getByLabelText('¥4.50 this session'))
     expect(screen.getByRole('dialog', { name: 'Session cost' })).toBeDefined()
-    fireEvent.click(screen.getByLabelText('Balance ¥1.00'))
+    fireEvent.click(screen.getByLabelText('DeepSeek account balance ¥1.00'))
     expect(screen.queryByRole('dialog', { name: 'Session cost' })).toBeNull()
     expect(screen.getByRole('dialog', { name: 'DeepSeek account balance' })).toBeDefined()
   })
