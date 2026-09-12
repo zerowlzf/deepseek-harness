@@ -1,12 +1,18 @@
 /* Billing figures inside the shipped composer stats row, wearing the same
    13/20 tertiary tier as the pills beside them. The row owns placement, the
    separator, and wrapping; this module owns only the pills' own skin, so a
-   contribution cannot move the row it joined. */
+   contribution cannot move the row it joined.
+
+   The row is width-bound: at the 680px clamp its content box holds 616px, and
+   the shipped pills plus the divider already spend 409 of that with the row's
+   own gaps. These two figures therefore stay narrow — an 8px gap of their own
+   and no icon chrome — because a wider pair would push the row onto a second
+   line instead of extending the one it belongs to. */
 
 .root {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
