@@ -14,7 +14,8 @@ import { createPortal } from 'react-dom'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { BalanceSnapshot, BillingSettings } from '../settings.ts'
 import { DEFAULT_CURRENCY, routeKey } from '../settings.ts'
 import type { BillingTranslate } from './locales.ts'
@@ -31,28 +32,17 @@ interface AccumulatedStep {
   readonly buckets: SessionBuckets
 }
 
-/** Props of the composer-dock billing row. */
+/** Props of the composer-stats billing figures. */
 export interface SessionCostMeterProps {
   /** Read one session projection value. */
   useProjection: UseProjection
-  /** The `ui-billing` namespace scope, bound by the plugin. */
-  scope: SettingsScope<BillingSettings>
+  /**
+   * Selector hook over the `ui-billing` namespace snapshot, bound by the
+   * renderer from the source the plugin supplies.
+   */
+  useBilling: SnapshotSelectorHook<SettingsScopeSnapshot<BillingSettings>>
   /** Row locale seat. */
   t: BillingTranslate
-}
-
-/**
- * Subscribe one component to a settings scope snapshot.
- * @param scope - the bound namespace scope.
- * @returns the current snapshot, replaced on every commit.
- */
-export function useScopeSnapshot<T>(scope: SettingsScope<T>): SettingsScopeSnapshot<T> {
-  const [snapshot, setSnapshot] = useState(() => scope.getSnapshot())
-  useEffect(() => {
-    setSnapshot(scope.getSnapshot())
-    return scope.subscribe(() => { setSnapshot(scope.getSnapshot()) })
-  }, [scope])
-  return snapshot
 }
 
 /**
@@ -74,16 +64,18 @@ export function activeRoute(selection: ModelSelectionProjection | undefined): st
 
 /**
  * Render the two billing pills.
- * @param props - projection read seat, namespace scope, and locale.
- * @returns the pill row, or null while no rate and no balance are known.
+ * @param props - projection read seat, namespace snapshot hook, and locale.
+ * @returns the figures, or null while no rate and no balance are known.
  */
-export function SessionCostMeter({ useProjection, scope, t }: SessionCostMeterProps) {
+export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMeterProps) {
   const usage = useProjection('tokenUsage')
   const selection = useProjection('modelSelection')
-  const snapshot = useScopeSnapshot(scope)
-  const rates = snapshot.value?.models
-  const balance = snapshot.value?.cache ?? null
-  const balanceError = snapshot.value?.cacheError ?? null
+  // One selector over the namespace snapshot: the component re-renders on the
+  // fields it reads and holds no subscription of its own.
+  const settings = useBilling(snapshot => snapshot.value)
+  const rates = settings?.models
+  const balance = settings?.cache ?? null
+  const balanceError = settings?.cacheError ?? null
 
   // Accumulated stretches, plus the running total they were derived from so a
   // growth can be attributed without re-folding the whole session. A session
@@ -118,7 +110,7 @@ export function SessionCostMeter({ useProjection, scope, t }: SessionCostMeterPr
     [accumulated.steps, rates],
   )
   const priced = accumulated.steps.some(step => rates?.[step.route] !== undefined)
-  const currency = currencyOf(balance, snapshot.value?.currency ?? DEFAULT_CURRENCY)
+  const currency = currencyOf(balance, settings?.currency ?? DEFAULT_CURRENCY)
   // Both dialog seats mount unconditionally: the row renders nothing without
   // data, and a conditional hook call would change the hook order instead.
   const costSeat = useStatDialog()

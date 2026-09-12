@@ -6,12 +6,12 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { ModelRate, RouteUsage } from '../src/settings.ts'
-import { priceUsage, routeKey, splitRouteKey } from '../src/settings.ts'
+import { parseRate, priceUsage, routeKey, splitRouteKey } from '../src/settings.ts'
 import {
   bucketDelta, isEmptyBuckets, sessionCost, turnCost, turnRouteUsage,
   turnRoutes, type SessionBuckets, type TurnRouteUsage,
 } from '../src/client/cost.ts'
-import { ageOf, currencySymbol, formatAmount, formatBalance, parseRate } from '../src/client/format.ts'
+import { ageOf, currencySymbol, formatAmount, formatBalance } from '../src/client/format.ts'
 import { modelIdsOf, providerRoutes, valueAtPath } from '../src/client/routes.ts'
 
 const FLASH: ModelRate = { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 }

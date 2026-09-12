@@ -35,12 +35,11 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
     : renderSlot('conversation.chat.assistant-actions', { messageId })
   // A Turn interrupted before any finalized text still owns the same accounting
   // and the same extension tail, so its row renders without the closing-message
-  // actions instead of dropping both. A Turn carrying nothing at all — no
-  // closing message, no tail contribution, no accounting, and later evidence
-  // that keeps it out of the HOVER reveal — still renders nothing: the row would
-  // be an empty action strip. `hasLaterChatNode` is a snapshot read, so the hook
-  // keeps running for every arm.
-  if (closing === null && tail === null && data.tokenUsage === undefined && !hasLaterChatNode) return null
+  // actions instead of dropping both. `hasLaterChatNode` is a snapshot read, so
+  // the hook keeps running for every arm.
+  const hasAccountedUsage = data.tokenUsage !== undefined
+  const rendersRow = closing !== null || tail !== null || hasAccountedUsage || hasLaterChatNode
+  if (!rendersRow) return null
 
   return (
     <div

@@ -85,15 +85,3 @@ export function ageOf(at: number, now: number): AgeBucket {
   if (seconds < 86_400) return { kind: 'hours', count: Math.floor(seconds / 3600) }
   return { kind: 'days', count: Math.floor(seconds / 86_400) }
 }
-
-/**
- * Parse one user-typed rate.
- * @param text - the input's text.
- * @returns the parsed non-negative number, or undefined when the text is not one.
- */
-export function parseRate(text: string): number | undefined {
-  const trimmed = text.trim()
-  if (trimmed === '') return 0
-  const value = Number(trimmed)
-  return Number.isFinite(value) && value >= 0 ? value : undefined
-}

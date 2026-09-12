@@ -34,6 +34,24 @@ export interface ModelRate {
   output: number
 }
 
+/** The three rate fields, in display order. */
+export const RATE_FIELDS = ['cacheHit', 'cacheMiss', 'output'] as const
+
+/** One field of {@link ModelRate}. */
+export type RateField = (typeof RATE_FIELDS)[number]
+
+/**
+ * Parse one user-typed rate.
+ * @param text - the input's text.
+ * @returns the parsed non-negative number, or undefined when the text is not one.
+ */
+export function parseRate(text: string): number | undefined {
+  const trimmed = text.trim()
+  if (trimmed === '') return 0
+  const value = Number(trimmed)
+  return Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
 /** One balance figure the Host read from the provider account API. */
 export interface BalanceSnapshot {
   /** Total available balance in {@link BalanceSnapshot.currency}. */

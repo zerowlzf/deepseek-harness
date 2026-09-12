@@ -6,6 +6,11 @@
  * and price tokens the provider already reported. Nothing here calls a model
  * or adds a request; unmounting the plugin removes every pill and the page.
  *
+ * The apply closure owns every ctx read: the bound scope reaches components as
+ * a `useBilling` selector hook through the `hooks` compartment, and the provider
+ * directory reaches the settings page as the `routeGroups` callback. A
+ * component therefore receives plain data and callbacks, never the context.
+ *
  * The settings namespace and the copy dictionary are distinct facts and are
  * named apart: a single shared identifier binds the scope to the dictionary,
  * which reads as an unregistered namespace and leaves every surface empty.
@@ -21,10 +26,13 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { NS, type BillingSettings } from '../settings.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { NS, parseRate, RATE_FIELDS, type BillingSettings } from '../settings.ts'
 import { LOCALE_NS, en, zh, type BillingKey, type BillingTranslate } from './locales.ts'
+import { providerRoutes, type ProviderRouteGroup } from './routes.ts'
 import { SessionCostMeter } from './CostMeter.tsx'
 import { TurnCostMeter } from './TurnCostMeter.tsx'
 import { BillingSection } from './SettingsSection.tsx'
@@ -44,10 +52,38 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Required services: the slot ledger, copy dictionaries, and the settings transport. */
 export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'remote.llm']
 
-/** The plugin's injected business face, closed over the bound namespace scope. */
-interface BillingInjected {
-  scope: SettingsScope<BillingSettings>
-  ctx: ClientContext
+/** The plugin's injected business face: reactive reads, the directory loader, and the writes. */
+export interface BillingInjected {
+  /** Reactive sources are bound by the renderer into `use<Name>` selector hooks. */
+  hooks: {
+    /** The `ui-billing` namespace snapshot. */
+    billing: { getSnapshot: () => SettingsScopeSnapshot<BillingSettings>; subscribe: (fn: () => void) => () => void }
+    /** The provider groups the plugin loaded. */
+    billingGroups: {
+      getSnapshot: () => readonly ProviderRouteGroup[]
+      subscribe: (fn: () => void) => () => void
+    }
+  }
+  /**
+   * Ask the plugin to reload the provider directory.
+   * @returns settlement after the load publishes, whatever it found.
+   */
+  routeGroups: () => Promise<void>
+  /**
+   * Write one provider's price fields, or remove its stored rates when the
+   * fields are all empty.
+   * @param route - the `provider/model` key to write.
+   * @param fields - the field values as typed, where an unparsable or empty
+   * field is dropped from the write.
+   * @returns settlement after the namespace commits the change.
+   */
+  saveRate: (route: string, fields: Readonly<Record<string, string>>) => Promise<void>
+  /**
+   * Remove one stored rate row.
+   * @param route - the `provider/model` key to clear.
+   * @returns settlement after the namespace commits the change.
+   */
+  clearRate: (route: string) => Promise<void>
 }
 
 /**
@@ -60,7 +96,97 @@ export function apply(ctx: ClientContext): void {
   // The nav label is registration-time text, so it reads the bound translate
   // directly; every component takes the framework's own `t` seat instead.
   const t: BillingTranslate = ctx.locale.bind(LOCALE_NS)
-  const injected = (): BillingInjected => ({ scope, ctx })
+  const groups = createSnapshotStore<readonly ProviderRouteGroup[]>([])
+
+  /**
+   * Read the provider directory and the settings mirror into route groups.
+   *
+   * Both reads belong to the apply world: the directory arrives over
+   * `ctx.remote.llm`, and the mirror is the shared describe face every settings
+   * surface derives from. A failed read keeps the previous answer.
+   * @returns settlement after the store publishes.
+   */
+  const routeGroups = async (): Promise<void> => {
+    const describe = ctx.settingsScope.describe()
+    const [registered, directory] = await Promise.all([
+      ctx.remote.llm.listProviders(),
+      ctx.remote.llm.listConfigurableProviders(),
+    ])
+    if (!registered.ok || !directory.ok) return
+    await describe.ensure()
+    const view = describe.getSnapshot().view
+    if (view === undefined) return
+    groups.set(directory.value.length === 0 && registered.value.length === 0
+      ? []
+      : providerRoutes(directory.value, registered.value, view.namespaces.map(entry => ({
+        ns: entry.ns,
+        value: entry.value,
+        ...entry.user === undefined ? {} : { user: entry.user },
+      }))))
+  }
+
+  // The two signals that can move the directory, subscribed where the reads
+  // live. Neither the subscription nor the plugin starts a load: the Billing
+  // page asks when it opens, and a signal only refreshes a list that already has
+  // an answer, so mounting this plugin issues no request until someone looks.
+  ctx.effect(() => {
+    const refresh = (): void => {
+      if (groups.getSnapshot().length === 0) return
+      void routeGroups()
+    }
+    const disposers = [
+      ctx.remote.$on('llm/adapters-updated', refresh),
+      ctx.on('connection/reset', refresh),
+    ]
+    return () => {
+      for (const dispose of disposers) dispose()
+    }
+  }, 'ui-billing: provider directory invalidations')
+
+  /**
+   * Write one route's three fields, or drop the row when every field is empty.
+   * @param route - the `provider/model` key to write.
+   * @param fields - typed values by field name; an empty or unparsable field is
+   * left out of the write, exactly as the page's draft table leaves it.
+   * @returns settlement after the namespace commits the change.
+   */
+  const saveRate = async (route: string, fields: Readonly<Record<string, string>>): Promise<void> => {
+    const ops: SettingsPathOpView[] = []
+    for (const field of RATE_FIELDS) {
+      const parsed = parseRate(fields[field] ?? '')
+      if (parsed === undefined) continue
+      if ((fields[field] ?? '').trim() === '' && scope.getSnapshot().value?.models[route] === undefined) continue
+      ops.push({ op: 'set', path: ['models', route, field], value: parsed })
+    }
+    await scope.mutate(ops.length === 0
+      ? [{ op: 'unset', path: ['models', route] }]
+      : ops)
+  }
+
+  /**
+   * Remove one stored rate row.
+   * @param route - the `provider/model` key to clear.
+   * @returns settlement after the namespace commits the change.
+   */
+  const clearRate = async (route: string): Promise<void> => {
+    await scope.mutate([{ op: 'unset', path: ['models', route] }])
+  }
+
+  const injected = (): BillingInjected => ({
+    hooks: {
+      billing: {
+        getSnapshot: () => scope.getSnapshot(),
+        subscribe: listener => scope.subscribe(listener),
+      },
+      billingGroups: {
+        getSnapshot: () => groups.getSnapshot(),
+        subscribe: listener => groups.subscribe(listener),
+      },
+    },
+    routeGroups,
+    saveRate,
+    clearRate,
+  })
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',

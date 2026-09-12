@@ -5,7 +5,7 @@
 // Mounted on 'conversation.composer.dock' so it sticks with the composer in the
 // active conversation scrollport (see ConversationRoot data-conversation-scroll).
 
-import { Children, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -335,19 +335,11 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, ren
   // billing (e.g. every request failed) shows its counts without a usage pill.
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
-  // The divider is decided by what the hole actually rendered, and the rendered
-  // children join this row directly: an entry's own wrapper would be a box the
-  // row has to measure, and a contribution owning several figures needs each of
-  // them to take this row's gap. The wrapper itself is a measuring device, not a
-  // layout box (`.trailingProbe` lays out to nothing).
-  const probe = useRef<HTMLSpanElement>(null)
-  const [trailingOccupied, setTrailingOccupied] = useState(false)
-  const trailing = Children.toArray(renderSlot('conversation.composer.stats', {}))
-  useEffect(() => {
-    const box = probe.current
-    if (box === null) return
-    setTrailingOccupied([...box.childNodes].some(node => node.nodeType === Node.ELEMENT_NODE))
-  }, [trailing])
+  // The divider belongs to the contribution that follows it and to nothing
+  // else, so layout decides it: `renderSlot` always renders its own anchor, so
+  // no render-time probe can tell an occupied hole from an empty one, while a
+  // sibling selector can. See `.trailingRule` in the module CSS.
+  const trailing = renderSlot('conversation.composer.stats', {})
   if (stats.steps === 0 && !hasTokens) return null
   // data-composer-stats: InputBar's `.root:has([data-composer-stats])` rule
   // tightens the composer's bottom clearance only while this row renders.
@@ -373,8 +365,12 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, ren
           }}
         />
       )}
-      {trailingOccupied && <span className={css.trailingRule} aria-hidden />}
-      <span ref={probe} className={css.trailingProbe}>{trailing}</span>
+      {trailing !== null && (
+        <>
+          <span className={css.trailingRule} aria-hidden />
+          <span className={css.trailingProbe}>{trailing}</span>
+        </>
+      )}
     </div>
   )
 })

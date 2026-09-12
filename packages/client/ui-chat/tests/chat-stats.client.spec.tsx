@@ -196,20 +196,21 @@ describe('StatsPills', () => {
   it('renders a trailing contribution inside the row, behind its divider', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsPills {...props(source, { tokenUsage: USAGE }, <b>7</b>)} />)
-    const row = view.container.querySelector('[data-composer-stats]')
-    // The divider proves the hole had an occupant, and the contribution rides
-    // the row's own flex line: the probe wrapper lays out to nothing.
-    expect([...row!.children].map(child => child.tagName)).toEqual(['SPAN', 'SPAN', 'SPAN', 'SPAN'])
-    expect(row!.children[2]!.getAttribute('aria-hidden')).toBe('true')
-    expect(row!.children[3]!.innerHTML).toBe('<b>7</b>')
-    expect(row!.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%7')
+    const row = view.container.querySelector('[data-composer-stats]')!
+    // The contribution rides the row's own flex line: the divider precedes it
+    // and the pass-through wrapper carries it, and the divider's visibility is
+    // decided in CSS (a rendered-node check cannot see an empty hole).
+    expect([...row.children].map(child => child.tagName)).toEqual(['SPAN', 'SPAN', 'SPAN', 'SPAN'])
+    expect(row.children[2]!.getAttribute('aria-hidden')).toBe('true')
+    expect(row.children[3]!.innerHTML).toBe('<b>7</b>')
+    expect(row.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%7')
   })
 
   it('leaves the row unchanged when the hole renders nothing', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsPills {...props(source)} />)
     const row = view.container.querySelector('[data-composer-stats]')!
-    expect(row.children).toHaveLength(3)
+    expect(row.children).toHaveLength(2)
     expect(row.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%')
   })
 
