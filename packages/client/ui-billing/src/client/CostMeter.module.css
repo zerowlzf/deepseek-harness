@@ -5,14 +5,16 @@
 
    The row is width-bound: at the 680px clamp its content box holds 616px, and
    the shipped pills plus the divider already spend 409 of that with the row's
-   own gaps. These two figures therefore stay narrow — an 8px gap of their own
-   and no icon chrome — because a wider pair would push the row onto a second
-   line instead of extending the one it belongs to. */
+   own gaps. These two figures therefore stay narrow — two bare amounts, a 10px
+   gap matching the shipped row's own rhythm, and no icon chrome — because a
+   wider pair would push the row onto a second line instead of extending the one
+   it belongs to. Each figure states what it is through its accessible name and
+   hover title. */
 
 .root {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
