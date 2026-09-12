@@ -75,11 +75,15 @@ cacheError: null
 
 ### Cost folds
 
-`tokenUsage` is a running total whose growth between two reads is exactly what one route was billed, so the session fold records one stretch per observed growth and prices each under its own route. Editing a rate reprices every stretch, and switching models starts a new stretch; neither loses history. The turn fold starts from the durable turn-tail accounting — the same evidence the shipped Turn-usage dialog shows — and splits it across the routes read from the loaded attempts, charging any remainder (a retried attempt) at the last route's rate so the priced total matches the tokens the provider reported.
+`tokenUsage` is a running total whose growth between two reads is exactly what one route was billed, so the session fold records one stretch per observed growth and prices each under its own route. Editing a rate reprices every stretch, and switching models starts a new stretch; neither loses history. The turn fold starts from the durable turn-tail accounting — the same evidence the shipped Turn-usage dialog shows — and splits it across the routes read from the loaded attempts, charging any remainder (a retried attempt) at the last route's rate so the priced total matches the tokens the provider reported. A turn whose accounting the loaded window lost is priced from the session projection under the newest known route, and an interrupted turn still shows its row, because the accounting is what that row exists for.
 
 ### Registration
 
-Three surfaces, each restored on unload: `settings.section` (the Billing page), `conversation.composer.stats` (the two pills inside the shipped stats row), and the `conversation.chat.turnTail` chain (the per-turn cost pill in the completed-turn strip, at a lower chain priority than the shipped produced-files entry). The settings page lists one card per provider the user configured — or that a stored rate row still names — with the provider's models behind that card's own edit control, so a catalogue entry nobody configured carries no rate rows.
+Three surfaces, each restored on unload: `settings.section` (the Billing page), `conversation.composer.stats` (the two pills inside the shipped stats row), and the `conversation.chat.turnTail` chain (the per-turn cost pill in the completed-turn strip, at a lower chain priority than the shipped produced-files entry). A chain entry receives the owner's currency spread flat onto its props, so the pill reads `turn` directly, the way the shipped produced-files entry reads `openFile`.
+
+The settings page lists one card per provider the user configured — or that a stored rate row or a route typed on the page names — with the provider's models behind that card's own edit control, so a catalogue entry nobody configured carries no rate rows. What counts as configured is the user layer of the provider's own settings namespace, which is the profile the Models page writes.
+
+The apply closure owns every ctx read. Components receive a `useBilling` selector hook over the namespace snapshot, a `useBillingGroups` hook over the loaded provider groups, and three plain callbacks: `routeGroups`, `saveRate`, and `clearRate`. The directory's own invalidations (`llm/adapters-updated`, `connection/reset`) are subscribed in the plugin, and the group list is one observable store, so a component holds no subscription machinery and never reaches for the context.
 
 </details>
 

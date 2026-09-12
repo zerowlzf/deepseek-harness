@@ -87,6 +87,10 @@ describe('Chat apply wiring', () => {
       .toMatchObject({ kind: 'keyed', scope: 'session' })
     expect(b.runtime.slots.entries('conversation.composer.dock').map(row => row.options.id))
       .toEqual(['stats'])
+    // The row declares the hole it renders itself, so a contribution inside the
+    // shipped pills' group has a declared slot to register into.
+    expect(b.runtime.slots.spec('conversation.composer.stats'))
+      .toMatchObject({ kind: 'list', scope: 'session' })
     expect(b.runtime.slots.entries('settings.general.item').map(row => row.options.id))
       .toEqual(['transcript-view', 'composer-enter'])
     await b.runtime.dispose()

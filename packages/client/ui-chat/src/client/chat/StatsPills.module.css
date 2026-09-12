@@ -20,16 +20,26 @@
 }
 
 /* Separates the shipped readings from a trailing contribution; the row's flex
-   gap spaces it on both sides, so it needs no margin of its own. */
+   gap spaces it on both sides, so it needs no margin of its own.
+   The divider exists only while the hole has an occupant, and only layout can
+   tell: `renderSlot` always mounts its own `[data-slot]` anchor, even with no
+   entries, so a rendered-node check would draw the rule for every composition.
+   The anchor is `display: contents`, which is why the `> *` sits on the slot's
+   anchor rather than on this row's child. */
 .trailingRule {
+  display: none;
   width: 1px;
   height: 12px;
   background: var(--dsw-alias-separator-primary);
 }
 
+.root:has(.trailingProbe > [data-slot='conversation.composer.stats'] > *) .trailingRule {
+  display: block;
+}
+
 /* The hole takes part in the row's own flex layout: a contribution's items sit
-   beside the pills instead of inside a box the row would have to measure. The
-   element itself is only the divider's occupancy probe. */
+   beside the pills instead of inside a box the row would have to measure. This
+   element is therefore a pass-through, not a container. */
 .trailingProbe {
   display: contents;
 }

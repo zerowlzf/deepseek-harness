@@ -17,32 +17,37 @@ import type {
   ChatConversationViewNode, TurnTokenUsage, TurnTailChatData, TurnTailOwnerProps, UseChat,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DEFAULT_CURRENCY, type BillingSettings, type ModelRate } from '../settings.ts'
 import type { BillingTranslate } from './locales.ts'
 import { turnCost, turnRouteUsage, type TurnBuckets, type TurnRouteUsage } from './cost.ts'
 import { formatAmount } from './format.ts'
 import { IconCoinOutline16 } from './icons.tsx'
-import { currencyOf, useScopeSnapshot } from './CostMeter.tsx'
+import { currencyOf } from './CostMeter.tsx'
 import { MEASURE_STYLE, useStatDialog } from './stat-dialog.ts'
 import css from './TurnCostMeter.module.css'
 import dialogCss from './stat-dialog.module.css'
 
-/** Props of the turn-tail billing pill. */
-export interface TurnCostMeterProps {
-  /**
-   * Owner currency of the completed-turn extension chain. Optional because the
-   * slot ledger resolves this key's owner share through `OwnerOf`, which is
-   * `object` in some compilations; the component treats its absence as "no
-   * turn to price" instead of relying on the share being non-null.
-   */
-  owner?: TurnTailOwnerProps | undefined
+/**
+ * Props of the turn-tail billing pill.
+ *
+ * The chain's owner share arrives spread onto the entry, not under an `owner`
+ * key: the renderer hands a component `{...ownerProps, matched}`, and the
+ * shipped produced-files entry reads `openFile` the same flat way. `turn` is
+ * therefore a direct prop, and `select`'s answer arrives as `matched` — which
+ * this entry does not need, because the owner already names the turn.
+ */
+export interface TurnCostMeterProps extends Pick<TurnTailOwnerProps, 'turn'> {
   /** Selector over the current Chat snapshot. */
   useChat: UseChat
   /** Read one session projection value. */
   useProjection: UseProjection
-  /** The `ui-billing` namespace scope, bound by the plugin. */
-  scope: SettingsScope<BillingSettings>
+  /**
+   * Selector hook over the `ui-billing` namespace snapshot, bound by the
+   * renderer from the source the plugin supplies.
+   */
+  useBilling: SnapshotSelectorHook<SettingsScopeSnapshot<BillingSettings>>
   /** Pill locale seat. */
   t: BillingTranslate
 }
@@ -138,20 +143,19 @@ function projectionUsage(
 
 /**
  * Render the turn-cost pill.
- * @param props - closing turn, Chat selector, projection seat, namespace scope, and locale.
+ * @param props - the closing turn (spread from the chain owner), Chat selector, projection seat, namespace scope, and locale.
  * @returns the pill and its dialog, or null while the turn carries no accounting.
  */
-export function TurnCostMeter({ owner, useChat, useProjection, scope, t }: TurnCostMeterProps) {
+export function TurnCostMeter({ turn: location, useChat, useProjection, useBilling, t }: TurnCostMeterProps) {
   // The node store, not the legacy compatibility slice: the turn-tail payload
   // lives only in the materialized Chat nodes, and the projection is the
   // fallback for a turn whose assistant rows left the loaded window.
   const nodes = useChat(snapshot => snapshot.nodes.values())
-  const snapshot = useScopeSnapshot(scope)
+  const settings = useBilling(snapshot => snapshot.value)
   const sessionUsage = useProjection('tokenUsage')
   const selection = useProjection('modelSelection')
   const seat = useStatDialog()
-  const turn = owner?.turn.turn
-  if (turn === undefined) return null
+  const turn = location.turn
   let usage: TurnTailChatData['tokenUsage']
   for (const node of nodes) {
     if (node.kind !== 'turn-tail') continue
@@ -165,11 +169,11 @@ export function TurnCostMeter({ owner, useChat, useProjection, scope, t }: TurnC
   usage ??= projectionUsage(sessionUsage, selection)
   if (usage === undefined) return null
 
-  const rates = snapshot.value?.models ?? {}
+  const rates = settings?.models ?? {}
   const attempts = attemptsOf(nodes, turn)
   const rows = turnRouteUsage(usage, attempts)
   const cost = turnCost(rows, rates)
-  const currency = currencyOf(snapshot.value?.cache ?? null, snapshot.value?.currency ?? DEFAULT_CURRENCY)
+  const currency = currencyOf(settings?.cache ?? null, settings?.currency ?? DEFAULT_CURRENCY)
   const priced = cost.priced.length > 0
   const label = priced
     ? t('turn.cost', { amount: formatAmount(cost.total, currency) })
