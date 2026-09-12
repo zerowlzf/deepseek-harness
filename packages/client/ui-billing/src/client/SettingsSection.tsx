@@ -13,7 +13,7 @@ import {
 } from '../settings.ts'
 import type { ProviderRouteGroup } from './routes.ts'
 import type { BillingInjected } from './face.ts'
-import { ageOf, formatBalance } from './format.ts'
+import { ageOf, balanceFailureText, formatBalance } from './format.ts'
 import { currencyOf } from './CostMeter.tsx'
 import { IconWalletOutline16 } from './icons.tsx'
 import { LOCALE_NS, type BillingKey } from './locales.ts'
@@ -230,7 +230,7 @@ export function BillingSection({
           <span>{currencyOf(balance, settings?.currency ?? DEFAULT_CURRENCY)}</span>
         </div>
         {settings?.cacheError != null && (
-          <div className={css.warn}>{t('section.balanceError', { message: settings.cacheError })}</div>
+          <div className={css.warn}>{balanceFailureText(settings.cacheError, t)}</div>
         )}
       </section>
 

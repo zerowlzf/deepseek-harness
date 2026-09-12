@@ -64,6 +64,24 @@ export interface BalanceSnapshot {
   at: number
 }
 
+/**
+ * Why one Host balance read produced no snapshot.
+ *
+ * The reason is structured rather than a sentence because the browser renders
+ * it: the Host half owns the read and the browser owns the copy, so a failure
+ * crosses that boundary as a kind plus the values its sentence needs, with the
+ * technical detail a person cannot translate riding along for a second line.
+ */
+export type BalanceFailure =
+  /** Nothing held a value for the referenced key. */
+  | { readonly kind: 'noKey'; readonly ref: string }
+  /** The account API answered with a status other than 200. */
+  | { readonly kind: 'http'; readonly status: number }
+  /** The request itself did not complete. */
+  | { readonly kind: 'network'; readonly detail: string }
+  /** The response arrived but could not be read as the documented payload. */
+  | { readonly kind: 'payload'; readonly detail: string }
+
 /** The namespace's complete value. */
 export interface BillingSettings {
   /**
@@ -77,7 +95,7 @@ export interface BillingSettings {
   /** Newest Host-read balance, or null before the first successful read. */
   cache: BalanceSnapshot | null
   /** Why the newest read failed, or null when it succeeded or never ran. */
-  cacheError: string | null
+  cacheError: BalanceFailure | null
 }
 
 /**
@@ -117,12 +135,20 @@ const balanceSchema: Schema<BalanceSnapshot | null> = Schema.union([
   }),
 ])
 
+const failureSchema: Schema<BalanceFailure | null> = Schema.union([
+  Schema.const(null),
+  Schema.object({ kind: Schema.const('noKey').required(), ref: Schema.string().default('') }),
+  Schema.object({ kind: Schema.const('http').required(), status: Schema.number().default(0) }),
+  Schema.object({ kind: Schema.const('network').required(), detail: Schema.string().default('') }),
+  Schema.object({ kind: Schema.const('payload').required(), detail: Schema.string().default('') }),
+])
+
 /** The namespace schema; `settings.register` resolves and validates against it. */
 export const BillingSettingsSchema: Schema<BillingSettings> = Schema.object({
   currency: Schema.string().default(DEFAULT_CURRENCY),
   models: Schema.dict(rateSchema).default({}),
   cache: balanceSchema.default(null),
-  cacheError: Schema.union([Schema.const(null), Schema.string()]).default(null),
+  cacheError: failureSchema.default(null),
 })
 
 /** Token buckets one route was billed for, in the provider's own units. */

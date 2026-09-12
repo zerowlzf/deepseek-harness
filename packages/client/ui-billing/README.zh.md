@@ -79,7 +79,7 @@ cache:
 cacheError: null
 ```
 
-`models` 记录是用户配置，Host 只读取它来作答。`cache` 与 `cacheError` 属于 Host：Host 半边每次读取时解析 API key（先走 `credentials` seam，再走进程环境），对配置的基址调用 `GET /user/balance`，并把结果写回命名空间。`credentials` 是必需注入，因此首次读取会等待凭据文档，而不会把运维者确实存过的 key 报成缺失。读取失败会保留上一份快照并记录原因，因此对话框可以显示一个陈旧金额以及它为何陈旧。刷新链在每次结算后重新排期，并随插件 fiber 一起停止。
+`models` 记录是用户配置，Host 只读取它来作答。`cache` 与 `cacheError` 属于 Host：Host 半边每次读取时解析 API key（先走 `credentials` seam，再走进程环境），对配置的基址调用 `GET /user/balance`，并把结果写回命名空间。`credentials` 是必需注入，因此首次读取会等待凭据文档，而不会把运维者确实存过的 key 报成缺失。读取本身接收一个 key 解析器而不是 context，凭据 seam 因此归插件体所有，读取保持为一次不触碰任何服务的调用。读取失败会保留上一份快照，并记录**结构化原因**——没有 key、HTTP 状态、传输失败、响应无法解析——由浏览器用自己的语言陈述，无法翻译的技术细节作为第二句附在后面，因此对话框可以显示一个陈旧金额以及它为何陈旧。刷新链在每次结算后重新排期，并随插件 fiber 一起停止。
 
 ### 费用折叠
 

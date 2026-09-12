@@ -1,5 +1,5 @@
 /**
- * Money and time formatting for the billing surfaces.
+ * Money, time, and failure formatting for the billing surfaces.
  *
  * Cost values span four orders of magnitude in ordinary use: one turn is a
  * fraction of a yuan while a long session reaches tens. A fixed precision
@@ -8,6 +8,9 @@
  *
  * @module @deepseek-ai/dsh-client-ui-billing/format
  */
+
+import type { BalanceFailure } from '../settings.ts'
+import type { BillingTranslate } from './locales.ts'
 
 /** Currency symbol used when the provider reports a code this table does not carry. */
 const DEFAULT_SYMBOL = '¥'
@@ -63,6 +66,31 @@ export function formatBalance(amount: number, currency: string): string {
   if (magnitude === 0) return `${symbol}0.00`
   if (magnitude < 0.01) return `${symbol}${fixed(amount, 4)}`
   return `${symbol}${fixed(amount, 2)}`
+}
+
+/**
+ * Localized reason one balance read produced no snapshot.
+ *
+ * The Host half reports the kind and its values; the sentence is this side's,
+ * so the Chinese and English surfaces state the same failure in their own
+ * language. The technical detail a resolver or response parse produced is
+ * appended after it, because a person cannot translate that string and hiding
+ * it would leave a failure with nothing to act on.
+ * @param failure - the structured reason the Host recorded.
+ * @param t - the surface's translate seat.
+ * @returns the display line, including the detail when the failure carried one.
+ */
+export function balanceFailureText(failure: BalanceFailure, t: BillingTranslate): string {
+  switch (failure.kind) {
+    case 'noKey': return t('balance.failure.noKey', { ref: failure.ref })
+    case 'http': return t('balance.failure.http', { status: failure.status })
+    case 'network': return withDetail(t('balance.failure.network'), failure.detail, t)
+    case 'payload': return withDetail(t('balance.failure.payload'), failure.detail, t)
+  }
+}
+
+function withDetail(title: string, detail: string, t: BillingTranslate): string {
+  return detail === '' ? title : `${title} · ${t('balance.failure.detail', { detail })}`
 }
 
 /** Relative age of one timestamp, for the balance freshness label. */

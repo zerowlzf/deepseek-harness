@@ -20,7 +20,7 @@ import type { BillingInjected } from './face.ts'
 import { effectiveRates } from './official-rates.ts'
 import { LOCALE_NS } from './locales.ts'
 import { bucketDelta, isEmptyBuckets, sessionBuckets, sessionCost, type RateTable, type SessionBuckets } from './cost.ts'
-import { ageOf, formatAmount, formatBalance } from './format.ts'
+import { ageOf, balanceFailureText, formatAmount, formatBalance } from './format.ts'
 import { IconCoinOutline16, IconWalletOutline16 } from './icons.tsx'
 import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog.ts'
 import css from './CostMeter.module.css'
@@ -172,7 +172,7 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
           )}
         </dl>
         {balanceError !== null && (
-          <div className={dialogCss.note}>{t('section.balanceError', { message: balanceError })}</div>
+          <div className={dialogCss.note}>{balanceFailureText(balanceError, t)}</div>
         )}
       </Pill>
     </span>

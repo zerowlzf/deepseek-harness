@@ -423,7 +423,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/client/ui-billing/src/index.ts:32`](../packages/client/ui-billing/src/index.ts)
+Source: [`packages/client/ui-billing/src/index.ts:35`](../packages/client/ui-billing/src/index.ts)
 
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 

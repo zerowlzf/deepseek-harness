@@ -79,7 +79,7 @@ cache:
 cacheError: null
 ```
 
-`models` is user configuration and the Host only reads it. `cache` and `cacheError` are Host-owned: the Host half resolves the API key per read (the `credentials` seam first, then the process environment), calls `GET /user/balance` on the configured base URL, and writes the answer back into the namespace. The `credentials` service is a required injection, so the first read waits for the credential document instead of reporting a key the operator did store as missing. A failed read keeps the previous snapshot and records the reason, so the dialog can show a stale amount and why it is stale. The refresh chain re-arms itself after each settlement and stops with the plugin fiber.
+`models` is user configuration and the Host only reads it. `cache` and `cacheError` are Host-owned: the Host half resolves the API key per read (the `credentials` seam first, then the process environment), calls `GET /user/balance` on the configured base URL, and writes the answer back into the namespace. The `credentials` service is a required injection, so the first read waits for the credential document instead of reporting a key the operator did store as missing. The read itself takes a key resolver rather than the context, so the plugin body owns the credential seam and the read stays one call that reaches no service. A failed read keeps the previous snapshot and records a structured reason — no key, an HTTP status, a transport failure, an unreadable payload — which the browser states in its own language, with the untranslatable detail appended as a second clause. The refresh chain re-arms itself after each settlement and stops with the plugin fiber.
 
 ### Cost folds
 

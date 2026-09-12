@@ -54,6 +54,9 @@ class MemorySettings extends SettingsProvider {
   }
 }
 
+/** Key resolution as the plugin performs it, over the environment alone here. */
+const fromEnv = (): Promise<string | undefined> => Promise.resolve(process.env['BILLING_TEST_KEY'])
+
 const cleanups: Array<() => Promise<void> | void> = []
 
 afterEach(async () => {
@@ -154,7 +157,7 @@ describe('namespace ownership', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('nope', { status: 401 }))))
     const { settings } = await mount()
     await vi.waitFor(() => {
-      expect(settings.doc[NS]).toMatchObject({ cacheError: 'balance request failed: HTTP 401' })
+      expect(settings.doc[NS]).toMatchObject({ cacheError: { kind: 'http', status: 401 } })
     })
     expect(settings.doc[NS]).not.toHaveProperty('cache')
   })
@@ -170,7 +173,7 @@ describe('namespace ownership', () => {
     fetchImpl.mockImplementation(() => Promise.reject(new Error('offline')))
     await vi.advanceTimersByTimeAsync(500)
     await vi.waitFor(() => {
-      expect(settings.doc[NS]).toMatchObject({ cacheError: 'balance request failed: offline' })
+      expect(settings.doc[NS]).toMatchObject({ cacheError: { kind: 'network', detail: 'offline' } })
     })
     expect(storedCache(settings)).toMatchObject({ total: 12.34 })
     vi.useRealTimers()
@@ -229,9 +232,9 @@ describe('readBalance', () => {
   it('reports a missing credential without a request', async () => {
     const fetchImpl = vi.fn()
     vi.stubGlobal('fetch', fetchImpl)
-    const result = await readBalance(new Context(), request)
+    const result = await readBalance(request, fromEnv)
     expect(result.ok).toBe(false)
-    expect(result.ok ? '' : result.error).toContain('BILLING_TEST_KEY')
+    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'noKey', ref: 'BILLING_TEST_KEY' })
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
@@ -244,7 +247,7 @@ describe('readBalance', () => {
         { currency: 'CNY', total_balance: '10.25' },
       ],
     }))))
-    const result = await readBalance(new Context(), request)
+    const result = await readBalance(request, fromEnv)
     expect(result.ok).toBe(true)
     expect(result.ok ? result.balance : undefined).toMatchObject({
       total: 10.25, currency: 'CNY', available: false,
@@ -256,38 +259,42 @@ describe('readBalance', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({
       balance_infos: [{ currency: 'USD', total_balance: '2' }],
     }))))
-    const result = await readBalance(new Context(), request)
+    const result = await readBalance(request, fromEnv)
     expect(result.ok ? result.balance.currency : undefined).toBe('USD')
   })
 
   it('refuses each malformed response', async () => {
     vi.stubEnv('BILLING_TEST_KEY', 'k')
-    for (const [body, expected] of [
-      ['not json', 'was not JSON'],
-      ['"scalar"', 'was not an object'],
+    for (const [body, detail] of [
+      // A parse failure's own message is the runtime's, so only the shape of
+      // this package's answer is pinned for it; the rest name the gap itself.
+      ['not json', undefined],
+      ['"scalar"', 'not an object'],
       ['{}', 'no balance_infos array'],
       ['{"balance_infos":[]}', 'no usable amount'],
       ['{"balance_infos":[{"currency":"CNY"}]}', 'no usable amount'],
       ['{"balance_infos":[{"currency":"","total_balance":"1"}]}', 'no usable amount'],
     ] as const) {
       vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(body, { status: 200 }))))
-      const result = await readBalance(new Context(), request)
+      const result = await readBalance(request, fromEnv)
       expect(result.ok, body).toBe(false)
-      expect(result.ok ? '' : result.error, body).toContain(expected)
+      const failure = result.ok ? undefined : result.failure
+      expect(failure?.kind, body).toBe('payload')
+      if (detail !== undefined) expect(failure, body).toEqual({ kind: 'payload', detail })
     }
   })
 
   it('reports a transport failure', async () => {
     vi.stubEnv('BILLING_TEST_KEY', 'k')
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('socket closed'))))
-    const result = await readBalance(new Context(), request)
-    expect(result.ok ? '' : result.error).toBe('balance request failed: socket closed')
+    const result = await readBalance(request, fromEnv)
+    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'network', detail: 'socket closed' })
   })
 
   it('reports a non-Error rejection verbatim', async () => {
     vi.stubEnv('BILLING_TEST_KEY', 'k')
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('boom'))))
-    const result = await readBalance(new Context(), request)
-    expect(result.ok ? '' : result.error).toBe('balance request failed: boom')
+    const result = await readBalance(request, fromEnv)
+    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'network', detail: 'boom' })
   })
 })
