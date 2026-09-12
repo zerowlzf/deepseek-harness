@@ -174,7 +174,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.assistant-actions\', () => ctx.slots.register(\n      { name: \'conversation.chat.assistant-actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:234',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:235',
   },
   {
     key: 'conversation.chat.commandview',
@@ -545,8 +545,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'conversation.composer.stats',
     kind: 'list',
     scope: 'session',
-    summary: 'Trailing figures inside the shipped composer stats row, after the turn/step and token pills and behind a divider.',
-    doc: 'Trailing figures inside the shipped composer stats row, after the\nturn/step and token pills and behind a divider. Declared by this package\nand rendered by `StatsPills` itself, so a contribution shares that row\'s\ncentred group rather than standing beside it as a second dock row. The\nrow is the composer\'s own; a contribution owns only its own figures.',
+    summary: 'Trailing figures inside the shipped composer stats row, after the turn/step and token pills.',
+    doc: 'Trailing figures inside the shipped composer stats row, after the\nturn/step and token pills. Declared by this package and rendered by\n`StatsPills` itself, so a contribution is one of that row\'s own flex\nitems — spaced by the row\'s gap, and centred with the group — rather than\nstanding beside it as a second dock row. The row is the composer\'s own; a\ncontribution owns only its own figures.',
     registerOptions: [
       {
         name: 'id',
@@ -594,7 +594,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.composer.stats\', () => ctx.slots.register(\n      { name: \'conversation.composer.stats\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:228',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:229',
   },
   {
     key: 'conversation.hero.agentPreset',

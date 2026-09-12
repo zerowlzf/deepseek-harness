@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包按用户自有的单价，为一次 Web 会话计价。它的 Host 半边注册 `ui-billing` settings 命名空间，并在其中缓存一份 DeepSeek 账户余额；浏览器半边渲染 composer 下方的两个费用胶囊、每个已完成轮次下方的一行费用，以及用于编辑单价的「计费」设置页。一条路由就是一对 `provider/model`，配三个「元 / 百万 tokens」单价：缓存命中输入、未命中输入与输出。余额始终是 DeepSeek 账户的余额，无论当前轮次跑在哪个提供方上。
+本包按用户自有的单价，为一次 Web 会话计价。它的 Host 半边注册 `ui-billing` settings 命名空间，并在其中缓存一份 DeepSeek 账户余额；浏览器半边渲染 composer 下方的两个费用数字、每个已完成轮次**自己的操作条**里的一枚费用胶囊，以及用于编辑单价的「计费」设置页。一条路由就是一对 `provider/model`，配三个「元 / 百万 tokens」单价：缓存命中输入、未命中输入与输出。余额始终是 DeepSeek 账户的余额，无论当前轮次跑在哪个提供方上。
 
 ## 目录
 
@@ -41,9 +41,15 @@ kind: "package-reference"
 
 ### 费用显示
 
-composer 行把本会话费用与余额放进官方轮次/步数胶囊与 token 胶囊自己那一行：`conversation.composer.stats` 是 ui-chat 统计行亲自渲染的一个洞，因此这些数字就是那一行自己的 flex 子项，与官方那组共享同一份居中与同一个 12px 间距，而不是落在它旁边。那一行是**宽度受限**的——680px 封顶时内容盒只有 616px，其中官方两个胶囊、行内三个间距与两个数字合计约占 560px——因此两个数字都是纯金额（`¥16.82` 与 `¥15.96`，用金币与钱包字形区分）；它们靠无障碍名与 hover 提示说明自己是什么，而不是靠可见文字。会话合计累积 `tokenUsage` 投影——整份持久日志，而不是已加载窗口——按运行总量每次增长时生效的路由计价，这正是让会话中途换模型能被正确切分的原因。
+composer 行把本会话费用与余额放进官方轮次/步数胶囊与 token 胶囊自己那一行：`conversation.composer.stats` 是 ui-chat 统计行亲自渲染的一个洞，因此这些数字就是那一行自己的 flex 子项，与官方那组共享同一份居中与同一个 12px 间距，而不是落在它旁边。那一行是**宽度受限**的——680px 封顶时内容盒只有 616px，其中官方两个胶囊、行内三个间距与两个数字合计约占 560px——因此两个数字都是纯金额（`¥16.82` 与 `¥15.96`，用金币与钱包字形区分；算不出时就是一个裸的 `-`）；它们靠无障碍名与 hover 提示说明自己是什么，而不是靠可见文字。会话合计累积 `tokenUsage` 投影——整份持久日志，而不是已加载窗口——按运行总量每次增长时生效的路由计价，这正是让会话中途换模型能被正确切分的原因。
 
-每个已完成的轮次在它自己的操作条里带上费用胶囊，位置在官方「用量」「用时」之后、消息时间之前，经由 `conversation.chat.turn-stats` 这个洞。它显示 `费用 ¥0.42`，点开是该轮次持久账目的按路由明细，用该轮次已加载的尝试拆出各条路由。同时产出了文件改动的轮次两行都在：文件行属于操作条上方的 tail 链，费用属于操作条内部的洞，彼此不抢占。账目不完整的轮次（事件已被分页移出、某次尝试从未结算）干脆不显示数字，与它自己那个「用量」胶囊的取舍完全一致：会话合计是整场会话的数，绝不拿来顶替某一轮。被中断的轮次同样保留这一行：没有收尾消息就没有可复制、可分支的目标，但账目与费用胶囊正是这一行存在的理由。尚未结束的轮次根本没有这一行——官方的收尾节点在该轮次结束时才出现——因此最新一条回答要等那一轮结算后才带上费用。
+每个已完成的轮次在它自己的操作条里带上费用胶囊，位置在官方「用量」「用时」之后、消息时间之前，经由 `conversation.chat.turn-stats` 这个洞。它显示 `费用 ¥0.42`，点开是该轮次的明细：一行一条路由，总额取自该轮次的持久账目，归属则来自每条已加载尝试**实际被计费的那条路由**。同时产出了文件改动的轮次两行都在：文件行属于操作条上方的 tail 链，费用属于操作条内部的洞，彼此不抢占。有三种情况不带数字，对话框会说明是哪一种：
+
+- 该轮次自身的账目缺失（事件已被分页移出、某次尝试从未结算）——与它自己那个「用量」胶囊的取舍完全一致：会话合计是整场会话的数，绝不拿来顶替某一轮；
+- 账目点了多条路由，而这些尝试一条都不在已加载窗口里，拆分无从谈起；对话框会点名这些无法归属的路由，而不是把整份合计在每条路由上各记一遍；
+- 它跑过的某条路由没有配单价，对话框会把它标为未定价。
+
+被中断的轮次同样保留这一行：没有收尾消息就没有可复制、可分支的目标，但账目与费用胶囊正是这一行存在的理由。尚未结束的轮次根本没有这一行——官方的收尾节点在该轮次结束时才出现——因此最新一条回答要等那一轮结算后才带上费用。
 
 这里不发起任何模型请求，也不写入任何会话事件：胶囊只是对提供方已经上报的用量做只读投影。
 
@@ -77,13 +83,13 @@ cacheError: null
 
 ### 费用折叠
 
-`tokenUsage` 是一个运行总量，两次读取之间的增量恰好就是某条路由被计费的部分，因此会话折叠为每次观察到的增长记录一段，并按各自的路由计价。编辑单价会重算每一段，切换模型会开始新的一段；两者都不会丢失历史。轮次折叠从持久的 turn-tail 账目出发——与官方「本轮用量」对话框所显示的同一份证据——并按已加载尝试中读到的路由拆分它；剩余部分（被重试的尝试）按最后一条路由的单价计入，使计价总额与提供方上报的 tokens 一致。账目已不在已加载窗口内的轮次不显示数字；绝不用会话投影顶替，因为把整场会话的数读成某一轮的费用本身就是错的。
+`tokenUsage` 是一个运行总量，两次读取之间的增量恰好就是某条路由被计费的部分，因此会话折叠为每次观察到的增长记录一段，并按各自的路由计价。编辑单价会重算每一段，切换模型会开始新的一段；两者都不会丢失历史。轮次折叠从持久的 turn-tail 账目出发——与官方「本轮用量」对话框所显示的同一份证据——按每条已加载尝试被计费的那条路由归属；剩余部分（被重试的尝试，或消息已离开窗口的尝试）按最后一条路由的单价计入，使计价总额与提供方上报的 tokens 一致。账目已不在已加载窗口内的轮次不显示数字；绝不用会话投影顶替，因为把整场会话的数读成某一轮的费用本身就是错的。
 
 ### 注册
 
-三个界面，卸载时各自还原：`settings.section`（计费页）、`conversation.composer.stats`（官方 composer 统计行内部的两个数字），以及 `conversation.chat.turn-stats`（已完成轮次自己的操作条里的每轮费用胶囊）。两个数字洞都是由宿主行亲自渲染的 list 槽；行的拥有者事实以**摊平**方式到达条目，因此轮次胶囊直接读 `turn`，与官方交付文件条目直接读 `openFile` 是同一种读法。
+三个界面，卸载时各自还原：`settings.section`（计费页）、`conversation.composer.stats`（官方 composer 统计行内部的两个数字），以及 `conversation.chat.turn-stats`（已完成轮次自己的操作条里的每轮费用胶囊）。两个数字洞都是由宿主行亲自渲染的 list 槽；行的拥有者事实以**摊平**方式到达条目，因此轮次胶囊直接读 `turn`，与官方交付文件条目直接读 `openFile` 是同一种读法。组件一律按槽的**四份份额**声明 props——`PropsRuntime`（拥有者份额与会话座位）、本插件面的 `InjectFace`、以及 `PropsLocale`——绝不手写成员清单。
 
-计费页为每个「用户确实配置过」的提供方（以及仍被某条已存单价行、或本页刚输入的路由点名的提供方）给出一张卡片，模型列表收在该卡片自己的编辑控件之后，因此没人配置过的目录条目不会带来任何单价行。是否算「已配置」，取自该提供方自身 settings 命名空间的用户层——也就是「模型」页写入的那份配置。
+计费页为「用户层确实配置过」「适配器当前已注册」或「部署层 profile 里带模型」（官方提供方就是这一类）的提供方各给一张卡片；三者都不占的目录条目没有可定价的东西，就不列出。每张卡片的模型来自那份 profile，模型列表收在该卡片自己的编辑控件之后；任何被某条已存单价行或本页刚输入的路由点名的提供方同样保留卡片，因此提供方消失的路由仍然可编辑、可清除。
 
 所有 ctx 读取都归 apply 闭包：组件拿到的是命名空间快照的 `useBilling` 选择器钩子、已加载提供方分组的 `useBillingGroups` 钩子，以及 `routeGroups`、`saveRate`、`clearRate` 三个普通回调。目录自身的失效信号（`llm/adapters-updated`、`connection/reset`）在插件里订阅，分组列表是一个可观察 store；因此组件既不持有任何订阅装置，也不会去够 ctx。
 
@@ -120,8 +126,12 @@ None; the package never assembles or sends a provider request.
 These limits define the current cost display. They are current package constraints, not a general billing comparison or a task backlog.
 
 - **A Turn with incomplete accounting shows no cost** — the durable per-Turn accounting is all-or-nothing, so a Turn whose evidence is incomplete (its events paged out, an attempt that never settled) renders no figure rather than a wider session number. An old Turn can therefore read as costless while its answer is still on screen, which is the same abstention the shipped Turn-usage pill makes beside it.
+- **A Turn that ran on several routes without a loaded attempt shows no cost** — attribution needs the route each attempt was billed on, so a Turn whose attempts all left the window cannot be split; the pill withholds the figure and the dialog names the routes. One named route is still priced, because every attempt ran there.
 - **A retried attempt is charged at the route of the attempt the window kept** — the turn fold reads route attribution from the loaded window, so a Turn that retried on another route is charged for the attempts that survived there, with any remainder at the last of them. The priced total stays equal to the tokens the provider reported; the split between two routes of one retried Turn is approximate.
+- **The session total is attributed from the browser's first sight** — the running total a page first observes is priced under the route active then, because the routes of everything before it are not in the evidence a browser can read; only later growth is split per route. A reload mid-session therefore re-reads the whole total under the route in use at that moment.
+- **No figures appear before the shipped row does** — both composer figures ride ui-chat's stats row, which renders once the session has a step or billed tokens, so a brand-new session shows no balance until its first Turn. The per-Turn figure appears when that Turn closes, since the row itself is the shipped tail node's.
 - **Cache writes are charged as uncached input** — the three configured rates match how the DeepSeek adapters report usage, where a cache write arrives as prompt input. A provider that reports writes in their own bucket is charged that bucket's tokens at its cache-miss rate.
+- **Official rates are the operator's to enter** — the page marks the official provider but ships no price list: published DeepSeek prices change, and a rate table baked into this package would silently misprice a session until someone noticed. The three fields are the same for every provider, official included.
 - **The balance is always the DeepSeek account's** — by design: the page compares spend against the one account the API can report. A deployment whose sessions never use the official provider still shows this balance, and the Host read is the only request this package makes.
 
 <a id="dev-note"></a>
@@ -131,8 +141,8 @@ These limits define the current cost display. They are current package constrain
 <summary>Working context for maintainers — click to expand</summary>
 
 - The per-turn node data lives only in the materialized Chat node store, not in the legacy compatibility slice the shipped stats row reads.
-- ui-chat's completed-Turn extension above the action row is a chain that elects one entry, so a contribution there is dropped for every Turn the shipped produced-files entry claims; the cost figure lives in the row's own list hole (`conversation.chat.turn-stats`) instead. The per-attempt node kind is `assistant-step`, which is what the route split reads.
-- `BillingTranslate` is declared locally because the framework's `PropsLocale` seat over a merged `LocaleNamespaceMap` is a superset of this package's dictionary keys; the two-faces-in-one-package layout means `src/settings.ts` is compiled by the Host leaf and consumed by the Client leaf through the project reference.
+- ui-chat's completed-Turn extension above the action row is a chain that elects one entry, so a contribution there is dropped for every Turn the shipped produced-files entry claims; the cost figure lives in the row's own list hole (`conversation.chat.turn-stats`) instead. The per-attempt node kind is `assistant-step`, and its `finalNode.provenance` is the route that attempt was billed on.
+- `BillingTranslate` stays declared locally while the props derive from `PropsLocale`: the framework's seat over a merged `LocaleNamespaceMap` accepts this dictionary's keys plus the shared common ones, which is assignable to the narrower local alias but not the reverse. The two-faces-in-one-package layout means `src/settings.ts` is compiled by the Host leaf and consumed by the Client leaf through the project reference.
 - settings 命名空间（`ui-billing`）与文案字典（`billing`）分开命名：两者共用一个标识符会把 scope 绑到字典上，于是 Host 明明在提供正确取值，而每个界面都渲染自己的「不可用」状态。
 
 </details>

@@ -7,16 +7,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  DEFAULT_CURRENCY, RATE_FIELDS, ROUTE_SEPARATOR, splitRouteKey, type BillingSettings, type ModelRate, type RateField,
+  DEFAULT_CURRENCY, RATE_FIELDS, ROUTE_SEPARATOR, splitRouteKey, type ModelRate, type RateField,
 } from '../settings.ts'
 import type { ProviderRouteGroup } from './routes.ts'
+import type { BillingInjected } from './face.ts'
 import { ageOf, formatBalance } from './format.ts'
 import { currencyOf } from './CostMeter.tsx'
 import { IconWalletOutline16 } from './icons.tsx'
-import type { BillingKey, BillingTranslate } from './locales.ts'
+import { LOCALE_NS, type BillingKey } from './locales.ts'
 import css from './SettingsSection.module.css'
 
 /** One editable rate field. */
@@ -45,36 +45,15 @@ function rateText(rate: ModelRate | undefined, field: Field): string {
 }
 
 /**
- * Props of the Billing settings section.
- *
- * Every ctx read belongs to the plugin's apply closure: the namespace arrives as
- * a `useBilling` selector hook and the provider directory as two plain members —
- * `routeGroups` asks for a load, `useBillingGroups` observes the answer, and the
- * invalidations that trigger a refresh are subscribed where they belong.
+ * Props of the Billing settings section: the page slot's runtime share, the
+ * plugin's injected face (the namespace and directory reads, the loader, and
+ * the two writes), and the page's locale seat. Every ctx read belongs to the
+ * plugin's apply closure; this component receives data and callbacks only.
  */
-export interface BillingSectionProps {
-  /**
-   * Selector hook over the `ui-billing` namespace snapshot, bound by the
-   * renderer from the source the plugin supplies.
-   */
-  useBilling: SnapshotSelectorHook<SettingsScopeSnapshot<BillingSettings>>
-  /**
-   * Selector hook over the provider groups the plugin loaded, joined with the
-   * profiles their settings hold.
-   */
-  useBillingGroups: SnapshotSelectorHook<readonly ProviderRouteGroup[]>
-  /** Page locale seat. */
-  t: BillingTranslate
-  /**
-   * Write one route's three price fields, or drop the row when every field is
-   * empty.
-   */
-  saveRate: (route: string, fields: Readonly<Record<string, string>>) => Promise<void>
-  /** Remove one stored rate row. */
-  clearRate: (route: string) => Promise<void>
-  /** Ask the plugin for one directory load. */
-  routeGroups: () => Promise<void>
-}
+export type BillingSectionProps =
+  & PropsRuntime<'settings.section'>
+  & InjectFace<BillingInjected>
+  & PropsLocale<typeof LOCALE_NS>
 
 /**
  * Render the Billing settings page.

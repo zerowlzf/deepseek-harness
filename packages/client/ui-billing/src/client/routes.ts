@@ -13,7 +13,6 @@
  */
 
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import { splitRouteKey } from '../settings.ts'
 
 /** One provider row the page renders. */
 export interface ProviderRouteGroup {
@@ -160,23 +159,4 @@ export function providerRoutes(
     })
   }
   return groups
-}
-
-/**
- * Route keys the page must show even though no configured model produced them:
- * every stored rate row, so a route whose provider disappeared stays editable
- * and clearable.
- * @param stored - the namespace's rate-row keys.
- * @param groups - discovered provider groups.
- * @returns keys to append to their group (or to a group with no discovered models).
- */
-export function orphanRoutes(
-  stored: readonly string[],
-  groups: readonly ProviderRouteGroup[],
-): string[] {
-  const discovered = new Set<string>()
-  for (const group of groups) {
-    for (const model of group.models) discovered.add(`${group.provider}/${model}`)
-  }
-  return stored.filter(key => !discovered.has(key) && splitRouteKey(key) !== undefined)
 }

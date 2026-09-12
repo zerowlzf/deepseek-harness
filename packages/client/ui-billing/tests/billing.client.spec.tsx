@@ -101,6 +101,33 @@ function billingFace(stub: StubSettingsScope<BillingSettings>, ctx?: Context) {
   }
 }
 
+
+/**
+ * The framework seats the renderer supplies to a slot entry. These specs drive
+ * each component directly and read only its owner share, the plugin's injected
+ * face, and its locale seat, so every other seat is a stub here; the members are
+ * typed `never` because no spec reads them.
+ * @returns one stub per standard seat, including the settings page's `close`.
+ */
+function seats() {
+  return {
+    useSession: (() => undefined) as never,
+    sessionId: 'session-1' as never,
+    useProjection: (() => undefined) as never,
+    useConversation: (() => undefined) as never,
+    useInput: (() => undefined) as never,
+    inputActions: {} as never,
+    useChat: (() => undefined) as never,
+    useTrajectory: (() => undefined) as never,
+    useSessions: (() => [] as never) as never,
+    useSessionPendingInteraction: (() => undefined) as never,
+    useWorkspaces: (() => undefined) as never,
+    usePanelInfo: (() => undefined) as never,
+    useResource: (() => undefined) as never,
+    close: (() => {}) as never,
+  }
+}
+
 /** A projection seat over one fixed value. */
 function projection(values: Record<string, unknown>) {
   return (key: string): unknown => values[key]
@@ -119,7 +146,7 @@ describe('session cost pill', () => {
   it('renders nothing before any usage or balance exists', () => {
     const stub = stubSettingsScope<BillingSettings>()
     const { container } = render(
-      <SessionCostMeter useProjection={projection({}) as never} {...billingFace(stub)} t={t} />,
+      <SessionCostMeter {...seats()} useProjection={projection({}) as never} {...billingFace(stub)} t={t} />,
     )
     expect(container.innerHTML).toBe('')
   })
@@ -138,14 +165,13 @@ describe('session cost pill', () => {
       uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     render(
-      <SessionCostMeter
+      <SessionCostMeter {...seats()}
         useProjection={projection({
           tokenUsage: usage,
           modelSelection: { lastUsed: { provider: 'bai', model: 'glm-5.3-flash' }, next: null },
         }) as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     expect(screen.getByText('¥18.00')).toBeDefined()
     // The visible text is the bare figure; the accessible name states what each
@@ -171,14 +197,13 @@ describe('session cost pill', () => {
       uncachedInputTokens: 0, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     render(
-      <SessionCostMeter
+      <SessionCostMeter {...seats()}
         useProjection={projection({
           tokenUsage: usage,
           modelSelection: { lastUsed: { provider: 'bai', model: 'glm-5.3-flash' }, next: null },
         }) as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     expect(screen.getByText('¥13.50')).toBeDefined()
     await act(async () => {
@@ -201,17 +226,19 @@ describe('session cost pill', () => {
       uncachedInputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     render(
-      <SessionCostMeter
+      <SessionCostMeter {...seats()}
         useProjection={projection({
           tokenUsage: usage,
           modelSelection: { lastUsed: { provider: 'x', model: 'y' }, next: null },
         }) as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
-    expect(screen.getByText('- this session')).toBeDefined()
-    fireEvent.click(screen.getByLabelText('- this session'))
+    // The visible text is the bare dash for both figures, so the pill is
+    // addressed by what it means.
+    const pill = screen.getByLabelText('Session cost unavailable')
+    expect(pill.textContent).toContain('-')
+    fireEvent.click(pill)
     expect(screen.getByText('No route has rates yet, so no cost can be computed. Set them in Settings → Billing.')).toBeDefined()
     expect(screen.getByText('x/y')).toBeDefined()
     expect(screen.getByText('No rates configured')).toBeDefined()
@@ -231,14 +258,13 @@ describe('session cost pill', () => {
       uncachedInputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     render(
-      <SessionCostMeter
+      <SessionCostMeter {...seats()}
         useProjection={projection({
           tokenUsage: usage,
           modelSelection: { lastUsed: { provider: 'a', model: 'b' }, next: null },
         }) as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     fireEvent.click(screen.getByLabelText('DeepSeek account balance $3.00'))
     const dialog = screen.getByRole('dialog', { name: 'DeepSeek account balance' })
@@ -250,8 +276,8 @@ describe('session cost pill', () => {
   it('closes on Escape and on an outside pointer', () => {
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot({ value: { currency: 'CNY', models: {}, cache: null, cacheError: 'x' } }))
-    render(<SessionCostMeter useProjection={projection({}) as never} {...billingFace(stub)} t={t} />)
-    const trigger = screen.getByLabelText('Balance -')
+    render(<SessionCostMeter {...seats()} useProjection={projection({}) as never} {...billingFace(stub)} t={t} />)
+    const trigger = screen.getByLabelText('DeepSeek account balance unavailable')
     fireEvent.click(trigger)
     // The panel is still hidden until the placement clamp measures it, which
     // jsdom reports as zero-size geometry, so the role query includes it.
@@ -278,14 +304,13 @@ describe('session cost pill', () => {
       uncachedInputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
     }
     render(
-      <SessionCostMeter
+      <SessionCostMeter {...seats()}
         useProjection={projection({
           tokenUsage: usage,
           modelSelection: { lastUsed: { provider: 'a', model: 'b' }, next: null },
         }) as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     fireEvent.click(screen.getByLabelText('¥4.50 this session'))
     expect(screen.getByRole('dialog', { name: 'Session cost' })).toBeDefined()
@@ -383,12 +408,11 @@ describe('turn cost row', () => {
       },
     }))
     render(
-      <TurnCostMeter
-        turn={{ turn: 1 } as never}
+      <TurnCostMeter {...seats()}
+        turn={{ turn: 1 } as never} seq={1} openFile={() => {}}
         useChat={useChat as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     expect(screen.getByText('Cost ¥18.00')).toBeDefined()
     fireEvent.click(screen.getByLabelText('Cost ¥18.00'))
@@ -420,12 +444,11 @@ describe('turn cost row', () => {
       },
     }))
     const view = render(
-      <TurnCostMeter
-        turn={{ turn: 9 } as never}
+      <TurnCostMeter {...seats()}
+        turn={{ turn: 9 } as never} seq={1} openFile={() => {}}
         useChat={useChat as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     expect(view.container.innerHTML).toBe('')
   })
@@ -434,12 +457,11 @@ describe('turn cost row', () => {
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot())
     const { unmount } = render(
-      <TurnCostMeter
-        turn={{ turn: 1 } as never}
+      <TurnCostMeter {...seats()}
+        turn={{ turn: 1 } as never} seq={1} openFile={() => {}}
         useChat={useChat as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     expect(screen.getByText('Cost -')).toBeDefined()
     fireEvent.click(screen.getByLabelText('Cost -'))
@@ -447,14 +469,55 @@ describe('turn cost row', () => {
     unmount()
 
     const empty = render(
-      <TurnCostMeter
-        turn={{ turn: 9 } as never}
+      <TurnCostMeter {...seats()}
+        turn={{ turn: 9 } as never} seq={1} openFile={() => {}}
         useChat={useChat as never}
         {...billingFace(stub)}
-        t={t}
-      />,
+        t={t} />,
     )
     expect(empty.container.innerHTML).toBe('')
+  })
+
+  it('declines a turn whose several routes have no loaded attempt', () => {
+    // The turn's own accounting names two routes and no attempt survived to
+    // split them, so the pill withholds the figure and the dialog names what it
+    // could not attribute instead of charging the aggregate twice.
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot({
+      value: {
+        currency: 'CNY',
+        models: { 'bai/glm-5.3-flash': FLASH_RATES, 'x/other': FLASH_RATES },
+        cache: null,
+        cacheError: null,
+      },
+    }))
+    const unattributed = [
+      {
+        key: 'turn-tail', kind: 'turn-tail', target: 'chat', anchorSeq: 3, location: { kind: 'session' },
+        visibility: 'visible', id: 'turn-tail',
+        data: {
+          turn: 1,
+          tokenUsage: {
+            uncachedInputTokens: 1_000_000, outputTokens: 1_000_000, totalTokens: 2_000_000,
+            cacheReadTokens: 0, cacheWriteTokens: 0,
+            routes: [{ provider: 'bai', model: 'glm-5.3-flash' }, { provider: 'x', model: 'other' }],
+          },
+        },
+      },
+    ] as unknown as readonly ChatConversationViewNode[]
+    const nodes = (select: (snapshot: { nodes: { values(): readonly ChatConversationViewNode[] } }) => unknown) =>
+      select({ nodes: { values: () => unattributed } })
+    render(
+      <TurnCostMeter {...seats()}
+        turn={{ turn: 1 } as never} seq={1} openFile={() => {}}
+        useChat={nodes as never}
+        {...billingFace(stub)}
+        t={t} />,
+    )
+    const pill = screen.getByLabelText('Cost -')
+    expect(pill.textContent).toContain('-')
+    fireEvent.click(pill)
+    expect(screen.getByText('This turn ran on several routes (bai/glm-5.3-flash, x/other), and the loaded evidence cannot split them, so no cost is counted')).toBeDefined()
   })
 })
 
@@ -521,7 +584,7 @@ describe('settings page', () => {
       user: { providers: { bai: { apiKeyEnv: 'BAI_API_KEY', models: [{ id: 'glm-5.3-flash' }, { id: 'qwen3.8-flash' }] } } },
     }))
     const face1 = billingFace(stub, ctx)
-    render(<BillingSection {...face1} t={t} />)
+    render(<BillingSection {...seats()} {...face1} t={t} />)
 
     await waitFor(() => { expect(screen.queryByText('BAI')).not.toBeNull() })
     expect(screen.getByText('DeepSeek account balance')).toBeDefined()
@@ -546,7 +609,7 @@ describe('settings page', () => {
     stub.publish(snapshot())
     const ctx = contextDouble(remoteDouble(), baiDirectory())
     const face2 = billingFace(stub, ctx)
-    render(<BillingSection {...face2} t={t} />)
+    render(<BillingSection {...seats()} {...face2} t={t} />)
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
 
@@ -574,7 +637,7 @@ describe('settings page', () => {
       user: { providers: { bai: {} } },
     }))
     const face3 = billingFace(stub, ctx)
-    render(<BillingSection {...face3} t={t} />)
+    render(<BillingSection {...seats()} {...face3} t={t} />)
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
     fireEvent.click(screen.getByText('Clear'))
@@ -592,7 +655,7 @@ describe('settings page', () => {
     stub.publish(snapshot())
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face4 = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...face4} t={t} />)
+    render(<BillingSection {...seats()} {...face4} t={t} />)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
 
     // The page's own entry point opens the provider it names, so a route no
@@ -636,7 +699,7 @@ describe('settings page', () => {
       },
     }
     const face5 = billingFace(stub, contextDouble(remote, directory))
-    render(<BillingSection {...face5} t={t} />)
+    render(<BillingSection {...seats()} {...face5} t={t} />)
     expect(await screen.findByText('BAI')).toBeDefined()
     // The configured-but-modelless provider keeps its card as the seat for a
     // hand-added route; an unconfigured catalogue row adds none.
@@ -652,7 +715,7 @@ describe('settings page', () => {
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face6 = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...face6} t={t} />)
+    render(<BillingSection {...seats()} {...face6} t={t} />)
     await screen.findByText('This deployment stores settings read-only, so rates cannot be saved.')
     expect(screen.getByText('Balance read failed: balance request failed: HTTP 401')).toBeDefined()
     expect(screen.getByText('Not read')).toBeDefined()
@@ -666,7 +729,7 @@ describe('settings page', () => {
     const remote = new TestRemote(ctx, remoteDouble())
     ctx.provide('settingsScope', { describe: () => describeFace } as never)
     const face7 = billingFace(stub, ctx)
-    render(<BillingSection {...face7} t={t} />)
+    render(<BillingSection {...seats()} {...face7} t={t} />)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
     // Both invalidation channels the page follows converge on the same reload.
     await act(async () => { remote.emit('llm/adapters-updated', []) })

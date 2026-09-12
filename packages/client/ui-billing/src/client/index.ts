@@ -27,9 +27,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { NS, parseRate, RATE_FIELDS, type BillingSettings } from '../settings.ts'
+import type { BillingInjected } from './face.ts'
 import { LOCALE_NS, en, zh, type BillingKey, type BillingTranslate } from './locales.ts'
 import { providerRoutes, type ProviderRouteGroup } from './routes.ts'
 import { SessionCostMeter } from './CostMeter.tsx'
@@ -39,6 +39,7 @@ import { BillingSection } from './SettingsSection.tsx'
 export type { BillingSectionProps } from './SettingsSection.tsx'
 export type { SessionCostMeterProps } from './CostMeter.tsx'
 export type { TurnCostMeterProps } from './TurnCostMeter.tsx'
+export type { BillingInjected } from './face.ts'
 export type { BillingKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -50,40 +51,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Required services: the slot ledger, copy dictionaries, and the settings transport. */
 export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'remote.llm']
-
-/** The plugin's injected business face: reactive reads, the directory loader, and the writes. */
-export interface BillingInjected {
-  /** Reactive sources are bound by the renderer into `use<Name>` selector hooks. */
-  hooks: {
-    /** The `ui-billing` namespace snapshot. */
-    billing: { getSnapshot: () => SettingsScopeSnapshot<BillingSettings>; subscribe: (fn: () => void) => () => void }
-    /** The provider groups the plugin loaded. */
-    billingGroups: {
-      getSnapshot: () => readonly ProviderRouteGroup[]
-      subscribe: (fn: () => void) => () => void
-    }
-  }
-  /**
-   * Ask the plugin to reload the provider directory.
-   * @returns settlement after the load publishes, whatever it found.
-   */
-  routeGroups: () => Promise<void>
-  /**
-   * Write one provider's price fields, or remove its stored rates when the
-   * fields are all empty.
-   * @param route - the `provider/model` key to write.
-   * @param fields - the field values as typed, where an unparsable or empty
-   * field is dropped from the write.
-   * @returns settlement after the namespace commits the change.
-   */
-  saveRate: (route: string, fields: Readonly<Record<string, string>>) => Promise<void>
-  /**
-   * Remove one stored rate row.
-   * @param route - the `provider/model` key to clear.
-   * @returns settlement after the namespace commits the change.
-   */
-  clearRate: (route: string) => Promise<void>
-}
 
 /**
  * Register the dictionaries, the settings page, and the two cost pills.

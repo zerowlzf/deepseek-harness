@@ -82,7 +82,3 @@
   color: var(--dsw-alias-label-tertiary);
   overflow-wrap: anywhere;
 }
-
-.unpriced {
-  color: var(--dsw-alias-label-warning, var(--dsw-alias-label-secondary));
-}
