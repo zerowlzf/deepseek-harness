@@ -130,10 +130,11 @@ export function sessionCost(steps: readonly SessionCostStep[], rates: RateTable)
  *
  * The turn-tail accounting carries one aggregate per bucket plus the set of
  * routes that billed it, and the loaded window carries each attempt's own
- * usage and route. When the attempts account for the same total, their buckets
- * are exact per route. A retried attempt makes the aggregate larger than the
- * surviving samples; that difference is charged at the last route's rate, which
- * keeps the priced total equal to the tokens the provider reported.
+ * usage and route. Attempts on the same route are one row, summed; when they
+ * account for the same total as the aggregate, those rows are exact per route.
+ * A retried attempt makes the aggregate larger than the surviving samples; that
+ * difference is charged at the last route's rate, which keeps the priced total
+ * equal to the tokens the provider reported.
  *
  * Without attempts the aggregate is all that is left, and it can be priced only
  * when a single route is named: every billed attempt ran there. Several named
@@ -155,41 +156,57 @@ export function turnRouteUsage(
     const [only] = named
     return named.length === 1 && only !== undefined ? [{ route: only, buckets: turnBuckets(usage) }] : []
   }
-  const total: TurnBuckets = turnBuckets(usage)
-  const summed = attempts.reduce(
-    (accumulated, attempt) => ({
-      uncachedInputTokens: accumulated.uncachedInputTokens + attempt.buckets.uncachedInputTokens,
-      outputTokens: accumulated.outputTokens + attempt.buckets.outputTokens,
-      cacheReadTokens: accumulated.cacheReadTokens + attempt.buckets.cacheReadTokens,
-      cacheWriteTokens: accumulated.cacheWriteTokens + attempt.buckets.cacheWriteTokens,
-    }),
-    { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-  )
-  const rows: TurnRouteUsage[] = attempts.map(attempt => ({ route: attempt.route, buckets: attempt.buckets }))
-  const remainder: TurnBuckets = {
-    uncachedInputTokens: total.uncachedInputTokens - summed.uncachedInputTokens,
-    outputTokens: total.outputTokens - summed.outputTokens,
-    cacheReadTokens: total.cacheReadTokens - summed.cacheReadTokens,
-    cacheWriteTokens: total.cacheWriteTokens - summed.cacheWriteTokens,
+  // One row per route, in the order the routes were first billed: a Turn's steps
+  // on one route are one line of its bill, and a Turn that switched models gets
+  // a line for each.
+  const byRoute = new Map<string, TurnBuckets>()
+  for (const attempt of attempts) {
+    const previous = byRoute.get(attempt.route)
+    byRoute.set(attempt.route, previous === undefined ? attempt.buckets : addBuckets(previous, attempt.buckets))
   }
-  if (remainder.uncachedInputTokens !== 0
-    || remainder.outputTokens !== 0
-    || remainder.cacheReadTokens !== 0
-    || remainder.cacheWriteTokens !== 0) {
+  const rows: TurnRouteUsage[] = [...byRoute].map(([route, buckets]) => ({ route, buckets }))
+  const summed = rows.reduce<TurnBuckets>((total, row) => addBuckets(total, row.buckets), emptyBuckets())
+  const remainder = subtractBuckets(turnBuckets(usage), summed)
+  if (!isEmptyTurnBuckets(remainder)) {
     const last = rows[rows.length - 1]
     if (last !== undefined) {
-      rows[rows.length - 1] = {
-        route: last.route,
-        buckets: {
-          uncachedInputTokens: last.buckets.uncachedInputTokens + remainder.uncachedInputTokens,
-          outputTokens: last.buckets.outputTokens + remainder.outputTokens,
-          cacheReadTokens: last.buckets.cacheReadTokens + remainder.cacheReadTokens,
-          cacheWriteTokens: last.buckets.cacheWriteTokens + remainder.cacheWriteTokens,
-        },
-      }
+      rows[rows.length - 1] = { route: last.route, buckets: addBuckets(last.buckets, remainder) }
     }
   }
   return rows
+}
+
+/** No billed tokens, the identity of {@link addBuckets}. */
+function emptyBuckets(): TurnBuckets {
+  return { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+}
+
+/** Bucket-wise sum. */
+function addBuckets(left: TurnBuckets, right: TurnBuckets): TurnBuckets {
+  return {
+    uncachedInputTokens: left.uncachedInputTokens + right.uncachedInputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    cacheReadTokens: left.cacheReadTokens + right.cacheReadTokens,
+    cacheWriteTokens: left.cacheWriteTokens + right.cacheWriteTokens,
+  }
+}
+
+/** Bucket-wise difference; a negative result means the two sides disagree. */
+function subtractBuckets(left: TurnBuckets, right: TurnBuckets): TurnBuckets {
+  return {
+    uncachedInputTokens: left.uncachedInputTokens - right.uncachedInputTokens,
+    outputTokens: left.outputTokens - right.outputTokens,
+    cacheReadTokens: left.cacheReadTokens - right.cacheReadTokens,
+    cacheWriteTokens: left.cacheWriteTokens - right.cacheWriteTokens,
+  }
+}
+
+/** Whether a bucket set carries no tokens. */
+function isEmptyTurnBuckets(buckets: TurnBuckets): boolean {
+  return buckets.uncachedInputTokens === 0
+    && buckets.outputTokens === 0
+    && buckets.cacheReadTokens === 0
+    && buckets.cacheWriteTokens === 0
 }
 
 /**
