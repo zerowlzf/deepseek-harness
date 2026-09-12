@@ -10,7 +10,7 @@ export const LOCALE_NS = 'billing'
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'section.label': '计费',
-  'section.intro': '会话费用按这里的单价计算：每条路由 = 提供方 / 模型，单价单位为「元 / 百万 tokens」。未填写的路由不计费。',
+  'section.intro': '会话费用按这里的单价计算：每条路由 = 提供方 / 模型，单价单位为「元 / 百万 tokens」。官方 DeepSeek 路由自带默认单价（官方公布价），你可以在这里覆盖；其余未填写的路由不计费。',
   'section.balanceTitle': 'DeepSeek 账户余额',
   'section.balanceUnavailable': '未读取',
   'section.balanceError': '余额读取失败：{message}',
@@ -20,6 +20,8 @@ export const zh = {
   'section.providersEmpty': '尚未发现任何已配置的提供方，请先在「模型」页添加提供方与模型。',
   'section.providerPathUnknown': '此提供方没有可读的模型列表，请手动添加路由。',
   'section.officialBadge': '官方',
+  'section.defaultRate': '默认单价',
+  'section.defaultRateHint': '未填写时按官方公布价计费',
   'section.rateHit': '缓存命中',
   'section.rateMiss': '缓存未命中',
   'section.rateOutput': '输出',
@@ -78,7 +80,7 @@ export const zh = {
 /** English dictionary (same key set). */
 export const en: Record<BillingKey, string> = {
   'section.label': 'Billing',
-  'section.intro': 'Session cost uses the rates below. Each route is a provider/model pair and each rate is per million tokens. A route with no rates is not billed.',
+  'section.intro': 'Session cost uses the rates below. Each route is a provider/model pair and each rate is per million tokens. Official DeepSeek routes carry a published default you can override here; any other route with no rates is not billed.',
   'section.balanceTitle': 'DeepSeek account balance',
   'section.balanceUnavailable': 'Not read',
   'section.balanceError': 'Balance read failed: {message}',
@@ -88,6 +90,8 @@ export const en: Record<BillingKey, string> = {
   'section.providersEmpty': 'No configured provider was found. Add a provider and its models on the Models page first.',
   'section.providerPathUnknown': 'This provider exposes no readable model list; add its routes manually.',
   'section.officialBadge': 'official',
+  'section.defaultRate': 'default rate',
+  'section.defaultRateHint': 'Billed at the published official price until you enter your own',
   'section.rateHit': 'Cache hit',
   'section.rateMiss': 'Cache miss',
   'section.rateOutput': 'Output',

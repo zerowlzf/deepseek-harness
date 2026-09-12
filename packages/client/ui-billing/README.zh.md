@@ -37,7 +37,7 @@ kind: "package-reference"
 | 缓存未命中 | 未缓存的提示词 tokens，含缓存写入。 |
 | 输出 | 生成的 tokens，含推理 tokens。 |
 
-单价的币种与余额一致，单位为百万 tokens。没有单价的路由不进入任何合计：胶囊显示短横线，对话框点名该路由，而不是显示一个当前配置无法支撑的数字。单价存放在命名空间的 `models` 记录中，键为 `provider/model`，因此手工编辑 settings 文档与页面操作是同一份存储。
+单价的币种与余额一致，单位为百万 tokens。官方 DeepSeek 提供方的路由自带公布价默认值，因此官方会话开箱即可读出费用：该路由上存过的一行会覆盖出厂价，走默认值的行会把默认数字显示为输入框的占位符并带一个「默认单价」标记，清除该行即回到默认值。其余没有存量单价的路由不进入任何合计：胶囊显示短横线，对话框点名该路由，而不是显示一个当前配置无法支撑的数字。单价存放在命名空间的 `models` 记录中，键为 `provider/model`，因此手工编辑 settings 文档与页面操作是同一份存储。
 
 ### 费用显示
 
@@ -131,7 +131,7 @@ These limits define the current cost display. They are current package constrain
 - **The session total is attributed from the browser's first sight** — the running total a page first observes is priced under the route active then, because the routes of everything before it are not in the evidence a browser can read; only later growth is split per route. A reload mid-session therefore re-reads the whole total under the route in use at that moment.
 - **No figures appear before the shipped row does** — both composer figures ride ui-chat's stats row, which renders once the session has a step or billed tokens, so a brand-new session shows no balance until its first Turn. The per-Turn figure appears when that Turn closes, since the row itself is the shipped tail node's.
 - **Cache writes are charged as uncached input** — the three configured rates match how the DeepSeek adapters report usage, where a cache write arrives as prompt input. A provider that reports writes in their own bucket is charged that bucket's tokens at its cache-miss rate.
-- **Official rates are the operator's to enter** — the page marks the official provider but ships no price list: published DeepSeek prices change, and a rate table baked into this package would silently misprice a session until someone noticed. The three fields are the same for every provider, official included.
+- **Shipped official prices can age** — the published defaults are a snapshot of the provider's price list for the model ids the shipped adapter reports, and the page's fields are how a deployment corrects them. Nothing fetches a price feed, so a price change reaches this package as a code change.
 - **The balance is always the DeepSeek account's** — by design: the page compares spend against the one account the API can report. A deployment whose sessions never use the official provider still shows this balance, and the Host read is the only request this package makes.
 
 <a id="dev-note"></a>

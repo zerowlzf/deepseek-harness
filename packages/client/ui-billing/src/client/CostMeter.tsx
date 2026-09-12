@@ -14,11 +14,12 @@ import { createPortal } from 'react-dom'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { BalanceSnapshot, BillingSettings } from '../settings.ts'
+import type { BalanceSnapshot } from '../settings.ts'
 import { DEFAULT_CURRENCY, routeKey } from '../settings.ts'
 import type { BillingInjected } from './face.ts'
+import { effectiveRates } from './official-rates.ts'
 import { LOCALE_NS } from './locales.ts'
-import { bucketDelta, isEmptyBuckets, sessionBuckets, sessionCost, type SessionBuckets } from './cost.ts'
+import { bucketDelta, isEmptyBuckets, sessionBuckets, sessionCost, type RateTable, type SessionBuckets } from './cost.ts'
 import { ageOf, formatAmount, formatBalance } from './format.ts'
 import { IconCoinOutline16, IconWalletOutline16 } from './icons.tsx'
 import { MEASURE_STYLE, useStatDialog, type StatDialogSeat } from './stat-dialog.ts'
@@ -68,7 +69,9 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
   // One selector over the namespace snapshot: the component re-renders on the
   // fields it reads and holds no subscription of its own.
   const settings = useBilling(snapshot => snapshot.value)
-  const rates = settings?.models
+  // Stored rows, with the published official prices filling in the official
+  // routes nobody has priced.
+  const rates = effectiveRates(settings?.models)
   const balance = settings?.cache ?? null
   const balanceError = settings?.cacheError ?? null
 
@@ -101,10 +104,10 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
   }, [usage, selection])
 
   const total = useMemo(
-    () => sessionCost(accumulated.steps, rates ?? {}),
+    () => sessionCost(accumulated.steps, rates),
     [accumulated.steps, rates],
   )
-  const priced = accumulated.steps.some(step => rates?.[step.route] !== undefined)
+  const priced = accumulated.steps.some(step => rates[step.route] !== undefined)
   const currency = currencyOf(balance, settings?.currency ?? DEFAULT_CURRENCY)
   // Both dialog seats mount unconditionally: the row renders nothing without
   // data, and a conditional hook call would change the hook order instead.
@@ -139,7 +142,7 @@ export function SessionCostMeter({ useProjection, useBilling, t }: SessionCostMe
           <dt>{t('pill.dialog.total')}</dt>
           <dd>{priced ? formatAmount(total, currency) : t('value.unavailable')}</dd>
         </dl>
-        <RouteRows steps={accumulated.steps} rates={rates ?? {}} currency={currency} t={t} />
+        <RouteRows steps={accumulated.steps} rates={rates} currency={currency} t={t} />
         {!priced && <div className={dialogCss.note}>{t('pill.dialog.noRateHint')}</div>}
       </Pill>
       <Pill
@@ -192,7 +195,7 @@ interface RouteRow {
  */
 export function groupSteps(
   steps: readonly AccumulatedStep[],
-  rates: NonNullable<BillingSettings['models']>,
+  rates: RateTable,
 ): RouteRow[] {
   const byRoute = new Map<string, RouteRow>()
   for (const step of steps) {
@@ -213,7 +216,7 @@ export function groupSteps(
 /** One row per route that contributed to the session total. */
 function RouteRows({ steps, rates, currency, t }: {
   steps: readonly AccumulatedStep[]
-  rates: NonNullable<BillingSettings['models']>
+  rates: RateTable
   currency: string
   t: SessionCostMeterProps['t']
 }) {
