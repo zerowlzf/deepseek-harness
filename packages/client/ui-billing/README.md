@@ -37,7 +37,7 @@ The Billing page lists every provider the deployment can configure, with one row
 | Cache miss | Uncached prompt tokens, including cache writes. |
 | Output | Generated tokens, reasoning tokens included. |
 
-Rates are in the currency the balance reports, per million tokens. A route with no rates contributes to no total: the pills show a dash and the dialog names the route, rather than showing a number the configuration cannot support. Rates are stored in the namespace's `models` record under the key `provider/model`, so a hand edit of the settings document and the page are the same storage.
+Rates are in the currency the balance reports, per million tokens. The official DeepSeek provider's routes carry published defaults, so an official session reads a cost out of the box: a stored row for that route overrides the shipped price, an eligible row shows the default as its field placeholder and a `default rate` badge, and clearing the row returns the route to the default. Every other route with no stored rates contributes to no total: the pills show a dash and the dialog names the route, rather than showing a number the configuration cannot support. Rates are stored in the namespace's `models` record under the key `provider/model`, so a hand edit of the settings document and the page are the same storage.
 
 ### Cost display
 
@@ -131,7 +131,7 @@ These limits define the current cost display. They are current package constrain
 - **The session total is attributed from the browser's first sight** — the running total a page first observes is priced under the route active then, because the routes of everything before it are not in the evidence a browser can read; only later growth is split per route. A reload mid-session therefore re-reads the whole total under the route in use at that moment.
 - **No figures appear before the shipped row does** — both composer figures ride ui-chat's stats row, which renders once the session has a step or billed tokens, so a brand-new session shows no balance until its first Turn. The per-Turn figure appears when that Turn closes, since the row itself is the shipped tail node's.
 - **Cache writes are charged as uncached input** — the three configured rates match how the DeepSeek adapters report usage, where a cache write arrives as prompt input. A provider that reports writes in their own bucket is charged that bucket's tokens at its cache-miss rate.
-- **Official rates are the operator's to enter** — the page marks the official provider but ships no price list: published DeepSeek prices change, and a rate table baked into this package would silently misprice a session until someone noticed. The three fields are the same for every provider, official included.
+- **Shipped official prices can age** — the published defaults are a snapshot of the provider's price list for the model ids the shipped adapter reports, and the page's fields are how a deployment corrects them. Nothing fetches a price feed, so a price change reaches this package as a code change.
 - **The balance is always the DeepSeek account's** — by design: the page compares spend against the one account the API can report. A deployment whose sessions never use the official provider still shows this balance, and the Host read is the only request this package makes.
 
 <a id="dev-note"></a>
