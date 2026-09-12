@@ -47,7 +47,12 @@ export interface Config {
   refreshIntervalMs: number
   /** Published price page rates are read from. */
   pricingUrl: string
-  /** Delay between price reads; `0` reads once at startup and schedules no further read. */
+  /**
+   * Delay between automatic price reads. A published price list moves rarely,
+   * so the wait is long and a restart inside it does not re-read a fresh table;
+   * `0` reads once at startup and schedules no further read. The page can ask
+   * for a read at any time whatever this value is.
+   */
   pricingRefreshIntervalMs: number
   /** Whole-request deadline for one read. */
   requestTimeoutMs: number
@@ -60,7 +65,7 @@ export const Config: Schema<Config> = Schema.object({
   currency: Schema.string().default(DEFAULT_CURRENCY),
   refreshIntervalMs: Schema.natural().default(300_000),
   pricingUrl: Schema.string().default(DEFAULT_PRICING_URL),
-  pricingRefreshIntervalMs: Schema.natural().default(86_400_000),
+  pricingRefreshIntervalMs: Schema.natural().default(15 * 86_400_000),
   requestTimeoutMs: Schema.natural().default(15_000),
 })
 
@@ -95,15 +100,22 @@ export function apply(ctx: Context, config: Config): void {
 
   let stopped = false
   const armed = new Set<() => void>()
+  let priceTimer: (() => void) | undefined
 
-  /** Arm one chain's next tick, unless the plugin stopped or configured it off. */
-  const schedule = (delayMs: number, run: () => Promise<void>): void => {
-    if (stopped || delayMs <= 0) return
+  /**
+   * Arm one chain's next tick, unless the plugin stopped or configured it off.
+   * @param delayMs - wait before the tick; `0` arms nothing.
+   * @param run - the chain, which re-arms itself when it settles.
+   * @returns the handle that cancels this tick, or undefined when none was armed.
+   */
+  const schedule = (delayMs: number, run: () => Promise<void>): (() => void) | undefined => {
+    if (stopped || delayMs <= 0) return undefined
     const handle = timer.timeout(() => {
       armed.delete(handle)
       void run()
     }, delayMs)
     armed.add(handle)
+    return handle
   }
 
   /** Commit one read's result. A refused write leaves the previous value in place. */
@@ -132,7 +144,37 @@ export function apply(ctx: Context, config: Config): void {
     schedule(config.refreshIntervalMs, refreshBalance)
   }
 
+  /**
+   * Arm the price chain's next automatic read.
+   *
+   * The wait is what the stored table has left of the interval rather than a
+   * whole one, so a restart inside the interval waits instead of re-reading a
+   * table the provider has not changed. Every settlement re-arms through here,
+   * and arming replaces the outstanding timer: a read the page asked for moves
+   * the automatic one out by a full interval rather than adding a second timer.
+   * @param full - wait a whole interval, whatever the stored table's age.
+   */
+  const armPriceRead = (full = false): void => {
+    const interval = config.pricingRefreshIntervalMs
+    const at = scope.get().official?.at
+    const age = at === undefined ? Number.POSITIVE_INFINITY : Date.now() - at
+    // A table nobody has read, a table older than the interval, and an interval
+    // of 0 are all due at once; a settlement that just happened waits a whole one.
+    const due = full ? interval : Math.max(0, interval - age)
+    priceTimer?.()
+    priceTimer = undefined
+    if (due <= 0) {
+      void refreshPrices()
+      return
+    }
+    priceTimer = schedule(due, refreshPrices)
+  }
+
   const refreshPrices = async (): Promise<void> => {
+    // A request the page made stays pending until this read settles, whichever
+    // way it went, so the page can show that read as in flight. The field is
+    // absent until something writes it, which is no request either.
+    const requested = scope.get().officialRequest != null
     const result = await readPrices({
       url: config.pricingUrl,
       currency: config.currency,
@@ -141,7 +183,7 @@ export function apply(ctx: Context, config: Config): void {
     if (stopped) return
     // Prices move far less often than a balance does, and a failed read keeps
     // the previous table: the shipped snapshot still prices the official routes.
-    await commit(result.ok
+    const outcome: Partial<BillingSettings> = result.ok
       ? {
         official: {
           models: result.prices.models,
@@ -151,17 +193,28 @@ export function apply(ctx: Context, config: Config): void {
         },
         officialError: null,
       }
-      : { officialError: result.failure })
-    schedule(config.pricingRefreshIntervalMs, refreshPrices)
+      : { officialError: result.failure }
+    await commit(requested ? { ...outcome, officialRequest: null } : outcome)
+    if (config.pricingRefreshIntervalMs > 0) armPriceRead(true)
   }
+
+  // A price read the page asked for: the settings document is the one store
+  // both halves share, and the Host is the half that can read the page at all
+  // (the documentation origin serves the browser no readable response). A
+  // request is served once; the Host's own clearing of the field is not one.
+  ctx.effect(() => scope.watch((next, prev) => {
+    if (next.officialRequest == null || next.officialRequest === prev.officialRequest) return
+    void refreshPrices()
+  }), 'ui-billing: price reads the page asked for')
 
   ctx.effect(() => {
     void refreshBalance()
-    void refreshPrices()
+    armPriceRead()
     return () => {
       stopped = true
       for (const handle of armed) handle()
       armed.clear()
+      priceTimer = undefined
     }
   }, 'ui-billing: account reads')
 }

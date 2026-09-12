@@ -45,4 +45,12 @@ export interface BillingInjected {
    * @returns settlement after the namespace commits the change.
    */
   clearRate: (route: string) => Promise<void>
+  /**
+   * Ask the Host to read the published price page now rather than at the next
+   * automatic read. The request is a settings write, so it settles when the
+   * document commits — not when the page has been read; the namespace's
+   * `officialRequest` field stays set until that read settles.
+   * @returns settlement after the namespace records the request.
+   */
+  refreshPrices: () => Promise<void>
 }

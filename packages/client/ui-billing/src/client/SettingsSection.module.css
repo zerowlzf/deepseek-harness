@@ -87,6 +87,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The right side of a card head: the figure it reports and the control that
+   acts on it, held together so the title stays on the left. */
+.cardEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .badge {
   padding: 0 6px;
   border-radius: 8px;

@@ -47,7 +47,15 @@ afterEach(() => {
 function snapshot(partial: Partial<SettingsScopeSnapshot<BillingSettings>> = {}): SettingsScopeSnapshot<BillingSettings> {
   return {
     status: 'ready',
-    value: { currency: DEFAULT_CURRENCY, models: {}, cache: null, cacheError: null, official: null, officialError: null },
+    value: {
+      currency: DEFAULT_CURRENCY,
+      models: {},
+      cache: null,
+      cacheError: null,
+      official: null,
+      officialError: null,
+      officialRequest: null,
+    },
     base: undefined,
     user: undefined,
     revision: 1,
@@ -84,6 +92,7 @@ function billingFace(stub: StubSettingsScope<BillingSettings>) {
     useBillingGroups: (() => []) as never,
     saveRate: vi.fn(async () => {}),
     clearRate: vi.fn(async () => {}),
+    refreshPrices: vi.fn(async () => {}),
     routeGroups: async () => {},
   }
 }
@@ -92,7 +101,16 @@ function billingFace(stub: StubSettingsScope<BillingSettings>) {
 function renderSession(value: Partial<BillingSettings>, usage: TokenUsageProjection, model: string): void {
   const stub = stubSettingsScope<BillingSettings>()
   stub.publish(snapshot({
-    value: { currency: 'CNY', models: {}, cache: null, cacheError: null, official: null, officialError: null, ...value },
+    value: {
+      currency: 'CNY',
+      models: {},
+      cache: null,
+      cacheError: null,
+      official: null,
+      officialError: null,
+      officialRequest: null,
+      ...value,
+    },
   }))
   render(
     <SessionCostMeter {...seats()}

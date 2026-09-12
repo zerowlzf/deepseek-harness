@@ -41,7 +41,7 @@ kind: "package-reference"
 
 官方 DeepSeek 提供方的路由自带公布价默认值，因此官方会话开箱即可读出费用：该路由上存过的一行会覆盖一切公布价，走默认值的行会把公布数字显示为输入框的占位符并带一个「默认单价」标记，清除该行即回到公布价。其余没有存量单价的路由不进入任何合计：胶囊显示短横线，对话框点名该路由，而不是显示一个当前配置无法支撑的数字。单价存放在命名空间的 `models` 记录中，键为 `provider/model`，因此手工编辑 settings 文档与页面操作是同一份存储。
 
-Host 会按 `pricingUrl`（默认是官方中文文档页）每天刷新一次公布价（`pricingRefreshIntervalMs`；`0` 表示只在启动时读一次），取页面走的是本部署自己的网页读取能力（`ctx.web`），而不是本包自己发起的请求；没有挂载该能力的部署会记为「没有可读的页面」。DeepSeek 没有价格接口——它的 API 提供补全、文件、一份只有 id 的模型列表和余额——因此那张页面表格是价格唯一可机读的表述。读到的表格无法识别、或它陈述的币种与 `currency` 不一致时，都会记成结构化失败：出厂快照继续给官方路由计价，计费页说明发生了什么。
+Host 会按 `pricingUrl`（默认是官方中文文档页）读取公布价，取页面走的是本部署自己的网页读取能力（`ctx.web`），而不是本包自己发起的请求；没有挂载该能力的部署会记为「没有可读的页面」。公布价很少变动，因此自动读取的间隔很长——默认十五天（`pricingRefreshIntervalMs`；`0` 表示只在启动时读一次、之后不再排期）——而且启动时若存量表格仍在间隔之内就只等待、不再读一次，这正是「重启不产生请求」的原因。页面上的「立即读取」控件随时可以要求读一次，承载这个请求的是 settings 文档：浏览器写入 `officialRequest`，Host 读到后去取页面，并在该次读取结算时清掉这个字段，卡片在此之前一直显示读取中。DeepSeek 没有价格接口——它的 API 提供补全、文件、一份只有 id 的模型列表和余额——因此那张页面表格是价格唯一可机读的表述。读到的表格无法识别、或它陈述的币种与 `currency` 不一致时，都会记成结构化失败：出厂快照继续给官方路由计价，计费页说明发生了什么。
 
 ### 单价编辑
 
@@ -100,9 +100,10 @@ official:
   at: 1787667264186
   source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
 officialError: null
+officialRequest: null
 ```
 
-`models` 记录是用户配置，Host 只读取它来作答。`cache`、`official` 与两个错误字段属于 Host，各自由一条刷新链写入。余额一侧：Host 每次读取时解析 API key（先走 `credentials` seam，再走进程环境），对配置的基址调用 `GET /user/balance`，并把结果写回命名空间。`credentials` 是必需注入，因此首次读取会等待凭据文档，而不会把运维者确实存过的 key 报成缺失。余额读取接收一个 key 解析器而不是 context，凭据 seam 因此归插件体所有，读取保持为一次不触碰任何服务的调用；价格读取同样接收一个取页函数，它由可选的 `web` 服务解析而来，解析器因此是对 markup 的纯函数。任一侧读取失败都会保留上一份取值，并记录**结构化原因**——没有 key、HTTP 状态、传输失败、响应无法解析、取页路径截断了正文、部署没有挂载网页读取能力，价格一侧还有「页面按另一种币种计价」——由浏览器用自己的语言陈述，无法翻译的技术细节作为第二句附在后面。两条链各自在结算后按自己的间隔重新排期，并随插件 fiber 一起停止。
+`models` 记录是用户配置，Host 只读取它来作答。`cache`、`official`、两个错误字段与 `officialRequest` 属于 Host，各自由对应的刷新链、或由要求读取的那个页面写入。余额一侧：Host 每次读取时解析 API key（先走 `credentials` seam，再走进程环境），对配置的基址调用 `GET /user/balance`，并把结果写回命名空间。`credentials` 是必需注入，因此首次读取会等待凭据文档，而不会把运维者确实存过的 key 报成缺失。余额读取接收一个 key 解析器而不是 context，凭据 seam 因此归插件体所有，读取保持为一次不触碰任何服务的调用；价格读取同样接收一个取页函数，它由可选的 `web` 服务解析而来，解析器因此是对 markup 的纯函数。任一侧读取失败都会保留上一份取值，并记录**结构化原因**——没有 key、HTTP 状态、传输失败、响应无法解析、取页路径截断了正文、部署没有挂载网页读取能力，价格一侧还有「页面按另一种币种计价」——由浏览器用自己的语言陈述，无法翻译的技术细节作为第二句附在后面。两条链各自在结算后按自己的间隔重新排期，并随插件 fiber 一起停止；价格链按存量表格自身的年龄排期，而页面要求的那次读取是替换这个定时器，而不是再加一个。
 
 ### 费用折叠
 
@@ -158,7 +159,7 @@ These limits define the current cost display. They are current package constrain
 - **No figures appear before the shipped row does** — both composer figures ride ui-chat's stats row, which renders once the session has a step or billed tokens, so a brand-new session shows no balance until its first Turn. The per-Turn figure appears when that Turn closes, since the row itself is the shipped tail node's.
 - **Cache writes are charged as uncached input** — the three configured rates match how the DeepSeek adapters report usage, where a cache write arrives as prompt input. A provider that reports writes in their own bucket is charged that bucket's tokens at its cache-miss rate.
 - **跨越价格边界的一段只按一档计费** — 证据是这一段自己的时刻，而不是逐 token 的时间戳：会话折叠取观察时刻，轮次折叠取尝试结算的时刻。因此只有尝试分别落在边界两侧时，跨过北京时间 12:00 或 18:00 的轮次才会被拆开，而一次跨越边界的长尝试按它结束时生效的那一档计费。
-- **公布价来自一张文档页面** — DeepSeek 没有价格接口，Host 解析的是 `pricingUrl` 上的表格；该读取失败或页面改版时，给官方路由计价的仍是出厂快照。提供方自上次成功读取后调整的价格，要等下一次读取（`pricingRefreshIntervalMs` 之内）才会进入会话。
+- **公布价来自一张文档页面** — DeepSeek 没有价格接口，Host 解析的是 `pricingUrl` 上的表格；该读取失败或页面改版时，给官方路由计价的仍是出厂快照。提供方自上次成功读取后调整的价格，要等下一次自动读取才会进入会话，最多相隔 `pricingRefreshIntervalMs`，或由页面上的「立即读取」立刻取回。
 - **按另一种币种计价的页面会被拒绝** — 表格只陈述一种币种的数字；当它与本文档计价所用币种不一致时，该次读取被丢弃并记录具名原因，因为混用会让每条官方路由都按汇率错价。改 `currency` 时请把 `pricingUrl` 指向相应语言的版本。
 - **只填了部分字段的路由，其余字段按 0 计费** — 留空的字段从不写入，因此手工填写时只给了一个数字、其余留空的行，其余字段取 schema 的 0。请把这条路由实际计费的数字都填上，或清除该行回落到公布价。
 - **The balance is always the DeepSeek account's** — by design: the page compares spend against the one account the API can report. A deployment whose sessions never use the official provider still shows this balance, and the Host read is the only request this package makes.
@@ -175,6 +176,7 @@ These limits define the current cost display. They are current package constrain
 - `BillingTranslate` 保持本地声明，而 props 从 `PropsLocale` 派生：框架在合并后的 `LocaleNamespaceMap` 上给出的座位同时接受本字典的键与共享的通用键，它可以赋给更窄的本地别名，反向则不行。一包两 face 的布局让 `src/settings.ts` 在两个 leaf 中都参与编译——Client leaf 把它列进 `include`——因为 Client 配置不允许进入 split 项目的 Host leaf。
 - settings 命名空间（`ui-billing`）与文案字典（`billing`）分开命名：两者共用一个标识符会把 scope 绑到字典上，于是 Host 明明在提供正确取值，而每个界面都渲染自己的「不可用」状态。
 - 本包处在逐文件 100% 覆盖率门内，只有一条分支带 `/* v8 ignore */`：轮次折叠里「最后一行存在」的判空——上面的循环为每条尝试都加了一行，而没有尝试的轮次在到达该处之前就已返回。
+- 页面要求的这次读取走 settings 写入，而不是调进 Host：浏览器自己读不了那张文档页（该来源不为它下发许可），本包也没有可调用的 Remote 命名空间，于是命名空间里的 `officialRequest` 字段就是两端共用的那条通道。客户端写下它请求的时刻，Host 监听命名空间、去取页面，并在该次读取结算时清掉字段。这个字段「不存在」与「为 null」对每个读取方都是同一件事，因为命名空间 schema 里的联合类型两者都不会写进存量文档。
 
 </details>
 

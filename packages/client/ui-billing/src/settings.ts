@@ -192,6 +192,17 @@ export interface BillingSettings {
   official: PriceSnapshot | null
   /** Why the newest price read failed, or null when it succeeded or never ran. */
   officialError: PriceFailure | null
+  /**
+   * A price read the browser asked for, as the moment it asked, or null when
+   * none is pending.
+   *
+   * A published price list moves rarely, so the automatic read is long-spaced
+   * and a restart inside that interval does not re-read a fresh table. The page
+   * is what knows someone wants the figures now, and the settings document is
+   * the one store both halves share, so the request travels as this write: the
+   * Host reads the page and clears the field when that read settles.
+   */
+  officialRequest: number | null
 }
 
 /**
@@ -283,6 +294,7 @@ export const BillingSettingsSchema: Schema<BillingSettings> = Schema.object({
   cacheError: failureSchema.default(null),
   official: priceSnapshotSchema.default(null),
   officialError: priceFailureSchema.default(null),
+  officialRequest: Schema.union([Schema.const(null), Schema.number()]).default(null),
 })
 
 /** Token buckets one route was billed for, in the provider's own units. */
