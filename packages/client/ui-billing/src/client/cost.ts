@@ -130,19 +130,21 @@ export function sessionCost(steps: readonly SessionCostStep[], rates: RateTable)
  *
  * The turn-tail accounting carries one aggregate per bucket plus the set of
  * routes that billed it, and the loaded window carries each attempt's own
- * usage. When the attempts account for the same total, their buckets are exact
- * per route. A retried attempt makes the aggregate larger than the surviving
- * samples; that difference is charged at the last route's rate, which keeps
- * the priced total equal to the tokens the provider reported.
+ * usage and route. When the attempts account for the same total, their buckets
+ * are exact per route. A retried attempt makes the aggregate larger than the
+ * surviving samples; that difference is charged at the last route's rate, which
+ * keeps the priced total equal to the tokens the provider reported.
  *
- * A turn whose assistant nodes are outside the loaded window — or whose turn
- * was interrupted, so no step survived — carries no attempts at all, and the
- * two named routes in its own accounting are then the only evidence there is.
- * One stretch per named route states what is known; inventing a split would
- * not.
+ * Without attempts the aggregate is all that is left, and it can be priced only
+ * when a single route is named: every billed attempt ran there. Several named
+ * routes with no surviving attempt cannot be split, and stating the aggregate
+ * under each of them would charge the turn once per route, so the fold declines
+ * and returns no rows, leaving the caller to name the routes it could not
+ * attribute.
  * @param usage - the turn's exact accounting.
  * @param attempts - loaded attempts of the turn, route by route, in order.
- * @returns one usage row per route, or an empty list when the accounting names none.
+ * @returns one usage row per route, or no rows when the turn cannot be
+ * attributed to the routes its own accounting names.
  */
 export function turnRouteUsage(
   usage: TurnTokenUsage,
@@ -150,7 +152,8 @@ export function turnRouteUsage(
 ): TurnRouteUsage[] {
   if (attempts.length === 0) {
     const named = (usage.routes ?? []).map(route => routeKey(route.provider, route.model))
-    return named.length === 0 ? [] : named.map(route => ({ route, buckets: turnBuckets(usage) }))
+    const [only] = named
+    return named.length === 1 && only !== undefined ? [{ route: only, buckets: turnBuckets(usage) }] : []
   }
   const total: TurnBuckets = turnBuckets(usage)
   const summed = attempts.reduce(

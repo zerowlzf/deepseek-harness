@@ -119,6 +119,28 @@ describe('turn splits', () => {
     }, [])).toEqual([])
   })
 
+  it('prices an unattempted turn under its single named route', () => {
+    // One named route is exact even with no surviving attempt: every billed
+    // attempt ran there.
+    const usage = {
+      uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35,
+      routes: [{ provider: 'a', model: 'm' }],
+    }
+    expect(turnRouteUsage(usage, [])).toEqual([{ route: 'a/m', buckets: turnBuckets(30, 5) }])
+  })
+
+  it('declines a turn whose several routes have no surviving attempt', () => {
+    // Stating the aggregate under each route would charge the turn once per
+    // route, so the fold returns nothing and the caller names what it could not
+    // attribute.
+    const usage = {
+      uncachedInputTokens: 30, outputTokens: 5, totalTokens: 35,
+      routes: [{ provider: 'a', model: 'm' }, { provider: 'b', model: 'n' }],
+    }
+    expect(turnRouteUsage(usage, [])).toEqual([])
+    expect(turnCost(turnRouteUsage(usage, []), { 'a/m': FLASH, 'b/n': FLASH }).total).toBe(0)
+  })
+
   it('prices priced rows, reports unpriced routes, and counts each route once', () => {
     const rows: TurnRouteUsage[] = [
       { route: 'a/m', buckets: turnBuckets(1_000_000, 1_000_000) },

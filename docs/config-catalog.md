@@ -416,7 +416,7 @@ export interface Config {
   baseURL: string
   /** Currency to report when the account holds several. */
   currency: string
-  /** Delay between balance reads; `0` reads once at startup and after each manual refresh. */
+  /** Delay between balance reads; `0` reads once at startup and schedules no further read. */
   refreshIntervalMs: number
   /** Whole-request deadline for one read. */
   requestTimeoutMs: number

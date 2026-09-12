@@ -114,8 +114,8 @@ describe('completed-turn footer row', () => {
     const view = renderTail({ closing: CLOSING })
     expect(view.container.querySelector('[data-turn-tail]')).not.toBeNull()
     // Copy plus the branch action a closing message makes addressable.
-    expect(view.container.querySelectorAll('button')).toHaveLength(2)
     expect(screen.getByLabelText('复制')).toBeDefined()
+    expect(screen.getByLabelText('在新对话中分支')).toBeDefined()
   })
 
   it('renders the row for an interrupted turn without addressing a message', () => {
@@ -125,7 +125,7 @@ describe('completed-turn footer row', () => {
     // The tail contribution survives; copy stays as chrome but unavailable, and
     // no branch action appears because there is no closing message to fork.
     expect(row?.textContent).toContain('tail')
-    expect(view.container.querySelectorAll('button')).toHaveLength(1)
+    expect(screen.queryByLabelText('在新对话中分支')).toBeNull()
     const copy = screen.getByLabelText('复制')
     expect(copy.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(copy)
@@ -181,12 +181,12 @@ describe('completed-turn footer row', () => {
     const owners = slot.mock.calls.map(([, owner]) => owner as { turn?: { turn?: number } })
     expect(owners[0]?.turn?.turn).toBe(1)
     const row = screen.getByLabelText('复制').parentElement!
-    // Copy, branch, the two shipped stat pills, the contribution, then the clock:
-    // the figures sit inside the row rather than above it on a line of their own.
-    expect([...row.children].map(child => child.tagName)).toEqual([
-      'BUTTON', 'BUTTON', 'SPAN', 'SPAN', 'B', 'SPAN',
-    ])
-    expect(row.children[4]!.textContent).toBe('cost')
-    expect(row.children[4]!.previousElementSibling?.textContent).toContain('用时')
+    const figures = screen.getByText('cost')
+    // The contribution is part of the action row itself, and it reads after the
+    // shipped figures: usage, then duration, then what the turn cost.
+    expect(row.contains(figures)).toBe(true)
+    const text = row.textContent ?? ''
+    expect(text.indexOf('用量')).toBeLessThan(text.indexOf('用时'))
+    expect(text.indexOf('用时')).toBeLessThan(text.indexOf('cost'))
   })
 })

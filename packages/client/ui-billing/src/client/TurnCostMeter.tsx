@@ -11,14 +11,12 @@
 
 import { Fragment } from 'react'
 import { createPortal } from 'react-dom'
-import type {
-  ChatConversationViewNode, TurnTailChatData, TurnTailOwnerProps, UseChat,
-} from '@deepseek-ai/dsh-client-ui-chat/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ChatConversationViewNode, TurnTailChatData } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DEFAULT_CURRENCY, routeKey, type BillingSettings, type ModelRate } from '../settings.ts'
-import type { BillingTranslate } from './locales.ts'
-import { turnCost, turnRouteUsage, type TurnBuckets, type TurnRouteUsage } from './cost.ts'
+import type { BillingInjected } from './face.ts'
+import { LOCALE_NS } from './locales.ts'
+import { turnCost, turnRouteUsage, turnRoutes, type TurnBuckets, type TurnRouteUsage } from './cost.ts'
 import { formatAmount } from './format.ts'
 import { IconCoinOutline16 } from './icons.tsx'
 import { currencyOf } from './CostMeter.tsx'
@@ -27,24 +25,18 @@ import css from './TurnCostMeter.module.css'
 import dialogCss from './stat-dialog.module.css'
 
 /**
- * Props of the turn-tail billing pill.
+ * Props of the per-Turn cost pill: the hole's runtime share (the completed
+ * Turn's own `turn`, `seq`, and `openFile`, plus the session seats), the
+ * plugin's injected face, and the pill's locale seat.
  *
- * The row's hole hands its owner share the way every other entry receives it:
- * spread onto the component, not nested under an `owner` key, so `turn` is a
- * direct prop. It is the Turn's Location, and the number this pill prices is
- * `turn.turn`.
+ * The owner share arrives spread onto the entry, not nested under an `owner`
+ * key, so `turn` is a direct prop: it is the Turn's Location, and the number
+ * this pill prices is `turn.turn`.
  */
-export interface TurnCostMeterProps extends Pick<TurnTailOwnerProps, 'turn'> {
-  /** Selector over the current Chat snapshot. */
-  useChat: UseChat
-  /**
-   * Selector hook over the `ui-billing` namespace snapshot, bound by the
-   * renderer from the source the plugin supplies.
-   */
-  useBilling: SnapshotSelectorHook<SettingsScopeSnapshot<BillingSettings>>
-  /** Pill locale seat. */
-  t: BillingTranslate
-}
+export type TurnCostMeterProps =
+  & PropsRuntime<'conversation.chat.turn-stats'>
+  & InjectFace<BillingInjected>
+  & PropsLocale<typeof LOCALE_NS>
 
 /** One attempt's billed buckets under the route that produced it. */
 export interface AttemptUsage {
@@ -82,7 +74,8 @@ export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: num
     if (typeof usage !== 'object' || usage === null) continue
     const provider = finalNode?.provenance?.provider
     const model = finalNode?.provenance?.model
-    if (typeof provider !== 'string' || typeof model !== 'string') continue
+    if (typeof provider !== 'string' || provider.length === 0) continue
+    if (typeof model !== 'string' || model.length === 0) continue
     attempts.push({
       route: routeKey(provider, model),
       buckets: {
@@ -139,6 +132,11 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
   const attempts = attemptsOf(nodes, turn)
   const rows = turnRouteUsage(usage, attempts)
   const cost = turnCost(rows, rates)
+  // A turn whose accounting names several routes and whose attempts are no
+  // longer loaded cannot be split: the figure is withheld and the dialog names
+  // the routes it could not attribute. It is the only reason for a priced row
+  // to be absent, so the routes are read only then.
+  const named = rows.length === 0 ? turnRoutes(usage, attempts.map(attempt => attempt.route)) : []
   const currency = currencyOf(settings?.cache ?? null, settings?.currency ?? DEFAULT_CURRENCY)
   const priced = cost.priced.length > 0
   const label = priced
@@ -192,6 +190,15 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
             <div className={dialogCss.note}>
               {rows.map(row => rateText(row.route, rates[row.route], t)).join(' · ')}
             </div>
+          )}
+          {/* One reason per dialog, so a withheld figure always says why. */}
+          {named.length > 0 && (
+            <div className={dialogCss.note}>
+              {t('turn.unattributed', { routes: named.join(t('pill.dialog.routeSeparator')) })}
+            </div>
+          )}
+          {rows.length === 0 && named.length === 0 && (
+            <div className={dialogCss.note}>{t('turn.unevidenced')}</div>
           )}
           {cost.unpriced.length > 0 && <div className={dialogCss.note}>{t('turn.unpriced')}</div>}
         </div>,

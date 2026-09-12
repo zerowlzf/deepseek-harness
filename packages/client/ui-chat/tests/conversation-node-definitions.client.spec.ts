@@ -941,6 +941,23 @@ describe('built-in conversation node Definitions', () => {
     })
   })
 
+  it('carries the billed route on the settled assistant node', () => {
+    // The attempt's provider and model are durable message facts; a consumer
+    // that prices each attempt reads them off this node, so the Chat fold keeps
+    // them rather than dropping what the record layer declares.
+    const routed = assembler([
+      at(60, 'turn/start', { turn: 7 }),
+      at(61, 'step/start', { turn: 7, step: 1 }),
+      at(62, 'assistant/message', {
+        turn: 7,
+        step: 1,
+        message: assistantMessage('assistant-routed', 'answer'),
+      }, { surfaceOp: 'append' }),
+    ])
+    const finalNode = (node(snapshot(routed), 'assistant-step')?.data as AssistantChatData).finalNode
+    expect(finalNode?.provenance).toEqual({ provider: 'fake', model: 'fake' })
+  })
+
   it('uses live Assistant deltas without replaying settled embedded streams', () => {
     const runningHistory = [
       at(1, 'turn/start', { turn: 1 }),
