@@ -28,6 +28,8 @@ interface Tail {
     readonly time: number
   }
   readonly tokenUsage?: unknown
+  /** Give the Turn recorded start and end events, which is what the time pill reads. */
+  readonly timed?: boolean
 }
 
 /** One tail node plus the Chat snapshot surface this view reads. */
@@ -56,7 +58,15 @@ function nodeOf(turn: number, tail: Tail): ChatConversationViewNode {
     key: `turn-tail-${String(turn)}`,
     kind: 'turn-tail',
     anchorSeq: turn * 5,
-    location: { kind: 'turn', turn: { turn } },
+    location: {
+      kind: 'turn',
+      turn: {
+        turn,
+        ...tail.timed === true
+          ? { start: { time: 1_000 }, end: { time: 4_000 } }
+          : {},
+      },
+    },
     data: {
       turn,
       seq: turn * 5,
@@ -73,6 +83,7 @@ function renderTail(
   tail: Tail,
   chain: (owner: unknown) => React.ReactNode = () => <b>tail</b>,
   laterTurn = false,
+  slot: (key: string, owner: unknown) => React.ReactNode = () => null,
 ) {
   const fixture = bench(tail, laterTurn)
   return render(
@@ -84,7 +95,7 @@ function renderTail(
         inspectCall: vi.fn(),
         useChat: fixture.useChat,
         useTurnData: (() => undefined) as never,
-        renderSlot: (() => null) as never,
+        renderSlot: ((key: string, owner: unknown) => slot(key, owner)) as never,
         renderSlotChain: ((_key: string, owner: unknown) => chain(owner)) as never,
         t,
       } as unknown as React.ComponentProps<typeof TurnTailNodeView>)}
@@ -155,5 +166,27 @@ describe('completed-turn footer row', () => {
   it('keeps that same turn row once a later turn makes it a non-tail node', () => {
     const view = renderTail({}, () => null, true)
     expect(view.container.querySelector('[data-turn-tail]')).not.toBeNull()
+  })
+
+  it('renders the trailing figures after the usage and time pills', () => {
+    const slot = vi.fn((key: string, _owner: unknown) =>
+      key === 'conversation.chat.turn-stats' ? <b>cost</b> : null)
+    renderTail(
+      { closing: CLOSING, timed: true, tokenUsage: { uncachedInputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+      () => null,
+      false,
+      slot,
+    )
+    // The hole takes the row's owner share, which is the Turn the figures belong to.
+    const owners = slot.mock.calls.map(([, owner]) => owner as { turn?: { turn?: number } })
+    expect(owners[0]?.turn?.turn).toBe(1)
+    const row = screen.getByLabelText('复制').parentElement!
+    // Copy, branch, the two shipped stat pills, the contribution, then the clock:
+    // the figures sit inside the row rather than above it on a line of their own.
+    expect([...row.children].map(child => child.tagName)).toEqual([
+      'BUTTON', 'BUTTON', 'SPAN', 'SPAN', 'B', 'SPAN',
+    ])
+    expect(row.children[4]!.textContent).toBe('cost')
+    expect(row.children[4]!.previousElementSibling?.textContent).toContain('用时')
   })
 })

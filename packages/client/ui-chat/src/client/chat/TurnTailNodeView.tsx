@@ -7,7 +7,9 @@ import { assistantText } from './turn-assistant.ts'
 import css from './TurnTailNodeView.module.css'
 
 type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'>
-  & PropsRenderSlots<'conversation.chat.turnTail' | 'conversation.chat.assistant-actions'>
+  & PropsRenderSlots<
+    'conversation.chat.turnTail' | 'conversation.chat.turn-stats' | 'conversation.chat.assistant-actions'
+  >
 
 /** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
 export const TurnTailNodeView = memo(function TurnTailNodeView({
@@ -24,6 +26,11 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const closing = data.closing
   const owner: TurnTailOwnerProps = { turn, seq: closing?.finalNode.seq ?? data.seq, openFile }
   const tail = renderSlotChain('conversation.chat.turnTail', owner)
+  // The row's own trailing figures, kept apart from the chain above: the chain
+  // elects one entry for the line before the row, while every contribution here
+  // renders, so figures a reader wants beside the usage pills are never dropped
+  // for the files row a Turn may also have produced.
+  const stats = renderSlot('conversation.chat.turn-stats', owner)
   const runMs = turn.start === undefined || turn.end === undefined
     ? undefined
     : Math.max(0, turn.end.time - turn.start.time)
@@ -67,6 +74,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
                 t={t}
               />
             )}
+            {stats}
           </>
         )}
         t={t}

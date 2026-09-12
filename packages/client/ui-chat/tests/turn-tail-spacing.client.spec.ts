@@ -15,18 +15,26 @@ describe('completed-turn spacing', () => {
   })
 })
 
-describe('composer stats trailing divider', () => {
-  // `renderSlot` mounts its own `[data-slot]` anchor even with no entries, so a
-  // rendered-node check would draw the divider for every composition. The rule
-  // states both halves: hidden by default, shown while the hole has a child.
-  it('hides the divider by default and shows it only for an occupied hole', () => {
+describe('composer stats trailing figures', () => {
+  // The hole is a flex item of the shipped row, so the row's own 12px gap
+  // spaces it and the figures read at the same rhythm as the pills beside them.
+  it('spaces a contribution with the row gap rather than a divider of its own', () => {
     const css = read('StatsPills.module.css')
-    expect(css).toMatch(/\.trailingRule\s*\{[^}]*display:\s*none/s)
+    expect(css).toMatch(/\.root\s*\{[^}]*gap:\s*12px/s)
+    expect(css).not.toMatch(/trailingRule|trailingProbe/)
+  })
+})
+
+describe('completed-turn stats cluster', () => {
+  // The pills rebate 6px of the row's 8px gap between themselves; a figure after
+  // them rebates the same, so every pair in the row reads at one rhythm. The
+  // hole's anchor is `display: contents`, which is why the rule lands on the
+  // contribution's own root.
+  it('rebates the trailing figure into the stat-pill cluster', () => {
+    const css = read('TurnTailNodeView.module.css')
     expect(css).toMatch(
-      /\.root:has\(\.trailingProbe > \[data-slot='conversation\.composer\.stats'\] > \*\) \.trailingRule\s*\{[^}]*display:\s*block/s,
+      /\.actions > span \+ \[data-slot='conversation\.chat\.turn-stats'\] > \*\s*\{[^}]*margin-left:\s*-6px/s,
     )
-    // The wrapper is a pass-through, so the row measures the contribution's own
-    // items rather than a box of ours.
-    expect(css).toMatch(/\.trailingProbe\s*\{[^}]*display:\s*contents/s)
+    expect(read('TurnUsagePanel.module.css')).toMatch(/\.root \+ \.root\s*\{[^}]*margin-left:\s*-6px/s)
   })
 })

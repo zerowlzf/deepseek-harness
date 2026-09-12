@@ -1,8 +1,9 @@
 /* Two icon pills side by side under the composer, 13/20 tertiary text tier
    with a hover-pill affordance; each pill's click-open panel wears the shared
    stat-dialog.module.css skin. A `conversation.composer.stats` contribution
-   joins the same centred group behind a divider, so the group stays one line
-   and stays centred whatever the trailing figures are. */
+   joins the same centred group on the row's own gap, so the group stays one
+   line, stays centred, and reads at one rhythm whatever the trailing figures
+   are. */
 
 .root {
   display: flex;
@@ -19,30 +20,10 @@
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
 }
 
-/* Separates the shipped readings from a trailing contribution; the row's flex
-   gap spaces it on both sides, so it needs no margin of its own.
-   The divider exists only while the hole has an occupant, and only layout can
-   tell: `renderSlot` always mounts its own `[data-slot]` anchor, even with no
-   entries, so a rendered-node check would draw the rule for every composition.
-   The anchor is `display: contents`, which is why the `> *` sits on the slot's
-   anchor rather than on this row's child. */
-.trailingRule {
-  display: none;
-  width: 1px;
-  height: 12px;
-  background: var(--dsw-alias-separator-primary);
-}
-
-.root:has(.trailingProbe > [data-slot='conversation.composer.stats'] > *) .trailingRule {
-  display: block;
-}
-
 /* The hole takes part in the row's own flex layout: a contribution's items sit
-   beside the pills instead of inside a box the row would have to measure. This
-   element is therefore a pass-through, not a container. */
-.trailingProbe {
-  display: contents;
-}
+   beside the pills instead of inside a box the row would have to measure. The
+   slot anchor carries `display: contents` itself, so an empty hole spends none
+   of the row's gaps. */
 
 /* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */
 .anchor {
