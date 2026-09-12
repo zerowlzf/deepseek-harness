@@ -17,6 +17,9 @@ import Schema from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 // Type-only: activates the `ctx.timer` Context declaration and its `ctx.timeout` mixin.
 import type {} from '@deepseek-ai/cordis-plugin-timer'
+// Type-only: activates the `ctx.credentials` Context declaration.
+import type {} from '@deepseek-ai/dsh-credentials'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, readBalance } from './account.ts'
 import { BillingSettingsSchema, DEFAULT_CURRENCY, NS } from './settings.ts'
 
@@ -62,6 +65,14 @@ export function apply(ctx: Context, config: Config): void {
   // delegates to `this.ctx`, whose fiber is the service — an effect armed
   // through it would belong to the service, not to this plugin.
   const timer = ctx.timer
+  // The credential store is a declared injection, so it is initialized before
+  // this runs; the environment covers a store that holds no value for the
+  // reference. The reference is the operator's own configuration value, taken
+  // as written: the seam refuses a malformed one through its own lookup.
+  const resolveKey = async (): Promise<string | undefined> => {
+    const resolved = await ctx.credentials.resolve(config.apiKeyEnv as CredentialRef)
+    return resolved?.value ?? process.env[config.apiKeyEnv]
+  }
 
   let stopped = false
   let pending: (() => void) | undefined
@@ -74,19 +85,19 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   const refresh = async (): Promise<void> => {
-    const result = await readBalance(ctx, {
+    const result = await readBalance({
       baseURL: config.baseURL,
       apiKeyEnv: config.apiKeyEnv,
       currency: config.currency,
       timeoutMs: config.requestTimeoutMs,
-    })
+    }, resolveKey)
     if (stopped) return
     // A failed refresh keeps the previous snapshot: a stale amount with its
-    // timestamp is more useful than an empty field, and the error says why.
+    // timestamp is more useful than an empty field, and the reason says why.
     try {
       await scope.update(result.ok
         ? { cache: result.balance, cacheError: null }
-        : { cacheError: result.error })
+        : { cacheError: result.failure })
     } catch (error: unknown) {
       // A refused write leaves the previous cache in place; the next tick retries.
       ctx.logger.warn('ui-billing: balance cache write failed')
