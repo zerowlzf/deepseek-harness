@@ -5,11 +5,11 @@
 // Mounted on 'conversation.composer.dock' so it sticks with the composer in the
 // active conversation scrollport (see ConversationRoot data-conversation-scroll).
 
-import { memo, useMemo, useState } from 'react'
+import { Children, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { IconDatabaseOutline16, IconGaugeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRenderSlots, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
@@ -120,13 +120,19 @@ export function billedInputTokens(usage: TokenUsageProjection): number {
   return usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
 }
 
-/** Props: the conversation-snapshot selector plus the projection read seat. */
-export interface StatsPillsProps {
-  useChat: SnapshotSelectorHook<ChatSnapshot>
-  useProjection: UseProjection
-  /** The owning dock's locale seat. */
-  t: ChatViewSlotProps['t']
-}
+/**
+ * Props: the conversation-snapshot selector, the projection read seat, and the
+ * row's own child hole. A contribution there shares this row's centred group
+ * instead of standing beside it as a second dock row.
+ */
+export type StatsPillsProps =
+  & {
+    useChat: SnapshotSelectorHook<ChatSnapshot>
+    useProjection: UseProjection
+    /** The owning dock's locale seat. */
+    t: ChatViewSlotProps['t']
+  }
+  & PropsRenderSlots<'conversation.composer.stats'>
 
 function exactCount(value: number, t: ChatViewSlotProps['t']): string {
   return t('message.turnUsage.count', { count: formatExactTokens(value, t) })
@@ -314,7 +320,7 @@ function UsagePill({ usage, t, dialog }: {
   )
 }
 
-export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }: StatsPillsProps) {
+export const StatsPills = memo(function StatsPills({ useChat, useProjection, renderSlot, t }: StatsPillsProps) {
   const settledNodes = useChat(s => s.legacy.nodes)
   const usage = useProjection('tokenUsage')
   // One exclusive slot for both dialogs: opening either pill closes the other.
@@ -329,6 +335,19 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }
   // billing (e.g. every request failed) shows its counts without a usage pill.
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
+  // The divider is decided by what the hole actually rendered, and the rendered
+  // children join this row directly: an entry's own wrapper would be a box the
+  // row has to measure, and a contribution owning several figures needs each of
+  // them to take this row's gap. The wrapper itself is a measuring device, not a
+  // layout box (`.trailingProbe` lays out to nothing).
+  const probe = useRef<HTMLSpanElement>(null)
+  const [trailingOccupied, setTrailingOccupied] = useState(false)
+  const trailing = Children.toArray(renderSlot('conversation.composer.stats', {}))
+  useEffect(() => {
+    const box = probe.current
+    if (box === null) return
+    setTrailingOccupied([...box.childNodes].some(node => node.nodeType === Node.ELEMENT_NODE))
+  }, [trailing])
   if (stats.steps === 0 && !hasTokens) return null
   // data-composer-stats: InputBar's `.root:has([data-composer-stats])` rule
   // tightens the composer's bottom clearance only while this row renders.
@@ -354,6 +373,8 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, t }
           }}
         />
       )}
+      {trailingOccupied && <span className={css.trailingRule} aria-hidden />}
+      <span ref={probe} className={css.trailingProbe}>{trailing}</span>
     </div>
   )
 })

@@ -24,16 +24,24 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const closing = data.closing
   const owner: TurnTailOwnerProps = { turn, seq: closing?.finalNode.seq ?? data.seq, openFile }
   const tail = renderSlotChain('conversation.chat.turnTail', owner)
-  if (closing === null) return tail === null ? null : <div className={css.root}>{tail}</div>
   const runMs = turn.start === undefined || turn.end === undefined
     ? undefined
     : Math.max(0, turn.end.time - turn.start.time)
   // Interruption-frozen partials carry no messageId, so they address no
   // durable message and contribute no per-message actions.
-  const messageId = closing.finalNode.messageId
+  const messageId = closing?.finalNode.messageId
   const assistantActions = messageId === undefined
     ? null
     : renderSlot('conversation.chat.assistant-actions', { messageId })
+  // A Turn interrupted before any finalized text still owns the same accounting
+  // and the same extension tail, so its row renders without the closing-message
+  // actions instead of dropping both. A Turn carrying nothing at all — no
+  // closing message, no tail contribution, no accounting, and later evidence
+  // that keeps it out of the HOVER reveal — still renders nothing: the row would
+  // be an empty action strip. `hasLaterChatNode` is a snapshot read, so the hook
+  // keeps running for every arm.
+  if (closing === null && tail === null && data.tokenUsage === undefined && !hasLaterChatNode) return null
+
   return (
     <div
       className={css.root}
@@ -42,10 +50,10 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
     >
       {tail}
       <MessageIconActions
-        text={assistantText(closing.blocks)}
-        time={closing.time}
+        text={closing === null ? '' : assistantText(closing.blocks)}
+        time={closing?.time}
         clock="end"
-        onBranch={() => { forkAt(closing.finalNode.seq) }}
+        {...closing === null ? {} : { onBranch: () => { forkAt(closing.finalNode.seq) } }}
         branchUnavailable={data.branchUnavailable || hasLaterChatNode}
         className={css.actions}
         extraActions={assistantActions}

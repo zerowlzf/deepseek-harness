@@ -286,6 +286,11 @@ describe('turn cost row', () => {
     return select({ nodes: { values: () => nodes } })
   }
 
+  /** Projection seat for the turns whose payload the loaded window lost. */
+  const noProjection = ((key: string): unknown => key === 'tokenUsage'
+    ? { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    : undefined) as never
+
   it('reads each attempt of the turn', () => {
     expect(attemptsOf(nodes, 1)).toEqual([{
       route: 'bai/glm-5.3-flash',
@@ -308,6 +313,7 @@ describe('turn cost row', () => {
       <TurnCostMeter
         owner={{ turn: { turn: 1 }, seq: 3, openFile: vi.fn() } as never}
         useChat={useChat as never}
+        useProjection={noProjection}
         scope={stub.scope}
         t={t}
       />,
@@ -321,6 +327,33 @@ describe('turn cost row', () => {
     expect(within(dialog).getByText('bai/glm-5.3-flash: 0.15 / 4.5 / 13.5')).toBeDefined()
   })
 
+  it('prices a turn whose payload the loaded window lost', () => {
+    const stub = stubSettingsScope<BillingSettings>()
+    stub.publish(snapshot({
+      value: {
+        currency: 'CNY',
+        models: { 'bai/glm-5.3-flash': FLASH_RATES },
+        cache: null,
+        cacheError: null,
+      },
+    }))
+    const projected = ((key: string): unknown => key === 'tokenUsage'
+      ? { uncachedInputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+      : key === 'modelSelection'
+        ? { lastUsed: null, next: { provider: 'bai', model: 'glm-5.3-flash' } }
+        : undefined) as never
+    render(
+      <TurnCostMeter
+        owner={{ turn: { turn: 9 }, seq: 3, openFile: vi.fn() } as never}
+        useChat={useChat as never}
+        useProjection={projected}
+        scope={stub.scope}
+        t={t}
+      />,
+    )
+    expect(screen.getByText('¥4.50 this turn')).toBeDefined()
+  })
+
   it('reports an unpriced turn and stays silent without accounting', () => {
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot())
@@ -328,6 +361,7 @@ describe('turn cost row', () => {
       <TurnCostMeter
         owner={{ turn: { turn: 1 }, seq: 3, openFile: vi.fn() } as never}
         useChat={useChat as never}
+        useProjection={noProjection}
         scope={stub.scope}
         t={t}
       />,
@@ -341,6 +375,7 @@ describe('turn cost row', () => {
       <TurnCostMeter
         owner={{ turn: { turn: 9 }, seq: 3, openFile: vi.fn() } as never}
         useChat={useChat as never}
+        useProjection={noProjection}
         scope={stub.scope}
         t={t}
       />,
@@ -360,6 +395,26 @@ describe('settings page', () => {
           value: [{ provider: 'bai', displayName: 'BAI', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'bai'] }],
         }),
       },
+    }
+  }
+
+  /**
+   * The describe mirror's answer with `bai` in the user layer, which is what
+   * makes the page treat it as a provider the user configured.
+   */
+  function baiDirectory(overrides: { value?: unknown; user?: unknown } = {}) {
+    const profile = { apiKeyEnv: 'BAI_API_KEY', models: [{ id: 'glm-5.3-flash' }] }
+    return {
+      ensure: () => Promise.resolve(),
+      getSnapshot: () => ({
+        view: {
+          namespaces: [{
+            ns: 'llm-pi-ai',
+            value: overrides.value ?? { providers: { bai: profile } },
+            user: overrides.user ?? { providers: { bai: profile } },
+          }],
+        },
+      }),
     }
   }
 
@@ -385,42 +440,36 @@ describe('settings page', () => {
         cacheError: null,
       },
     }))
-    const describeFace = {
-      ensure: () => Promise.resolve(),
-      getSnapshot: () => ({
-        view: {
-          namespaces: [{
-            ns: 'llm-pi-ai',
-            value: { providers: { bai: { models: [{ id: 'glm-5.3-flash' }, { id: 'qwen3.8-flash' }] } } },
-          }],
-        },
-      }),
-    }
-    const ctx = contextDouble(remoteDouble(), describeFace)
+    const ctx = contextDouble(remoteDouble(), baiDirectory({
+      value: { providers: { bai: { models: [{ id: 'glm-5.3-flash' }, { id: 'qwen3.8-flash' }] } } },
+    }))
     render(<BillingSection scope={stub.scope} ctx={ctx} t={t} />)
 
     expect(await screen.findByText('BAI')).toBeDefined()
     expect(screen.getByText('DeepSeek account balance')).toBeDefined()
     expect(screen.getByText('¥12.75')).toBeDefined()
+    // A closed card summarises what it holds: two models, one of them priced.
+    expect(screen.getByText('2 models')).toBeDefined()
+    expect(screen.getByText('1 priced')).toBeDefined()
+    expect(screen.queryByLabelText('bai/glm-5.3-flash Cache hit')).toBeNull()
+
+    fireEvent.click(screen.getByLabelText('Edit rates for bai'))
     const saved = screen.getByLabelText('bai/glm-5.3-flash Cache hit') as HTMLInputElement
     expect(saved.value).toBe('0.15')
     const blank = screen.getByLabelText('bai/qwen3.8-flash Cache hit') as HTMLInputElement
     expect(blank.value).toBe('')
-
+    // The control reads as its opposite state while the card is open.
+    fireEvent.click(screen.getByLabelText('Collapse rates for bai'))
+    expect(screen.queryByLabelText('bai/glm-5.3-flash Cache hit')).toBeNull()
   })
 
   it('queues one path-addressed write per edited field', async () => {
     const stub = stubSettingsScope<BillingSettings>()
     stub.publish(snapshot())
-    const describeFace = {
-      ensure: () => Promise.resolve(),
-      getSnapshot: () => ({
-        view: { namespaces: [{ ns: 'llm-pi-ai', value: { providers: { bai: { models: [{ id: 'glm-5.3-flash' }] } } } }] },
-      }),
-    }
-    const ctx = contextDouble(remoteDouble(), describeFace)
+    const ctx = contextDouble(remoteDouble(), baiDirectory())
     render(<BillingSection scope={stub.scope} ctx={ctx} t={t} />)
     await screen.findByText('BAI')
+    fireEvent.click(screen.getByLabelText('Edit rates for bai'))
 
     const hit = screen.getByLabelText('bai/glm-5.3-flash Cache hit')
     fireEvent.change(hit, { target: { value: '0.15' } })
@@ -441,12 +490,10 @@ describe('settings page', () => {
     stub.publish(snapshot({
       value: { currency: 'CNY', models: { 'bai/glm-5.3-flash': FLASH_RATES }, cache: null, cacheError: null },
     }))
-    const describeFace = {
-      ensure: () => Promise.resolve(),
-      getSnapshot: () => ({ view: { namespaces: [{ ns: 'llm-pi-ai', value: { providers: { bai: { models: [] } } } }] } }),
-    }
-    render(<BillingSection scope={stub.scope} ctx={contextDouble(remoteDouble(), describeFace)} t={t} />)
+    const ctx = contextDouble(remoteDouble(), baiDirectory({ value: { providers: { bai: { models: [] } } } }))
+    render(<BillingSection scope={stub.scope} ctx={ctx} t={t} />)
     await screen.findByText('BAI')
+    fireEvent.click(screen.getByLabelText('Edit rates for bai'))
     fireEvent.click(screen.getByText('Clear'))
     await act(async () => { await Promise.resolve() })
     expect(stub.mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['models', 'bai/glm-5.3-flash'] }])
@@ -464,6 +511,8 @@ describe('settings page', () => {
     render(<BillingSection scope={stub.scope} ctx={contextDouble(remoteDouble(), describeFace)} t={t} />)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
 
+    // The page's own entry point opens the provider it names, so a route no
+    // directory declares is still priceable.
     const field = screen.getByLabelText('Add a route manually')
     fireEvent.change(field, { target: { value: 'bai' } })
     fireEvent.keyDown(field, { key: 'Enter' })
@@ -522,7 +571,7 @@ describe('plugin registration', () => {
       name: 'root',
       children: {
         'settings.section': { kind: 'list', scope: 'root' },
-        'conversation.composer.dock': { kind: 'list', scope: 'session' },
+        'conversation.composer.stats': { kind: 'list', scope: 'session' },
         'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
       },
     } as never, () => null)
@@ -531,7 +580,7 @@ describe('plugin registration', () => {
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(ctx.slots.entries('settings.section')).toHaveLength(1)
-    expect(ctx.slots.entries('conversation.composer.dock')).toHaveLength(1)
+    expect(ctx.slots.entries('conversation.composer.stats')).toHaveLength(1)
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
     expect(ctx.slots.entries('settings.section')[0] !== undefined).toBe(true)
     expect(resolveSlotLabel(ctx.slots.entries('settings.section')[0]?.options.label)).toBe('Billing')
@@ -541,7 +590,7 @@ describe('plugin registration', () => {
 
     await fiber.dispose()
     expect(ctx.slots.entries('settings.section')).toHaveLength(0)
-    expect(ctx.slots.entries('conversation.composer.dock')).toHaveLength(0)
+    expect(ctx.slots.entries('conversation.composer.stats')).toHaveLength(0)
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
   })
 })

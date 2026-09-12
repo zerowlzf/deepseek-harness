@@ -171,6 +171,9 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('conversation.composer.dock', () =>
     ctx.slots.register({
       name: 'conversation.composer.dock', id: 'stats', order: 0, locale: NS,
+      // The row renders this hole itself, so a contribution lands inside the
+      // shipped pills' group instead of beside the row.
+      children: { 'conversation.composer.stats': { kind: 'list', scope: 'session' } },
     }, StatsPills))
 
   ctx.slots.inject('conversation.approval.detail', () =>

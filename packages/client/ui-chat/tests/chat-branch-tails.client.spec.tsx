@@ -1048,6 +1048,8 @@ describe('small branch tails', () => {
       <StatsPills
         t={t}
         useChat={bindSnapshotSelector(source)}
+        renderSlot={(() => null) as React.ComponentProps<typeof StatsPills>['renderSlot']}
+        SessionProvider={({ children }) => <>{children}</>}
         useProjection={(key: string) => key === 'tokenUsage'
           ? { uncachedInputTokens: 0, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 }
           : undefined}
