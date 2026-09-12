@@ -21,8 +21,10 @@ import type {} from '@deepseek-ai/cordis-plugin-timer'
 // Type-only: activates the `ctx.credentials` Context declaration.
 import type {} from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+// Type-only: activates the `ctx.web` Context declaration.
+import type {} from '@deepseek-ai/dsh-web'
 import { DEFAULT_API_KEY_ENV, DEFAULT_BASE_URL, readBalance } from './account.ts'
-import { DEFAULT_PRICING_URL, readPrices } from './published-prices.ts'
+import { DEFAULT_PRICING_URL, readPrices, type PageFetcher } from './published-prices.ts'
 import { BillingSettingsSchema, DEFAULT_CURRENCY, NS, type BillingSettings } from './settings.ts'
 
 /**
@@ -81,6 +83,15 @@ export function apply(ctx: Context, config: Config): void {
     const resolved = await ctx.credentials.resolve(config.apiKeyEnv as CredentialRef)
     return resolved?.value ?? process.env[config.apiKeyEnv]
   }
+  // The Host's web capability is the deployment's own retrieval path, so the
+  // price read goes through it instead of a request of this package's own. It
+  // is optional: a deployment that mounts no web provider still registers the
+  // namespace and reads the balance, and the price read reports that it had no
+  // page to read.
+  const fetchPage = (): PageFetcher | undefined => {
+    const web = ctx.get('web')
+    return web === undefined ? undefined : (url, signal) => web.fetch({ url }, signal)
+  }
 
   let stopped = false
   const armed = new Set<() => void>()
@@ -126,7 +137,7 @@ export function apply(ctx: Context, config: Config): void {
       url: config.pricingUrl,
       currency: config.currency,
       timeoutMs: config.requestTimeoutMs,
-    })
+    }, fetchPage())
     if (stopped) return
     // Prices move far less often than a balance does, and a failed read keeps
     // the previous table: the shipped snapshot still prices the official routes.

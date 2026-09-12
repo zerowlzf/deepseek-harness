@@ -101,6 +101,7 @@ export function balanceFailureText(failure: BalanceFailure, t: BillingTranslate)
  */
 export function priceFailureText(failure: PriceFailure, t: BillingTranslate): string {
   switch (failure.kind) {
+    case 'noWeb': return t('price.failure.noWeb')
     case 'http': return t('price.failure.http', { status: failure.status })
     case 'network': return withDetail(t('price.failure.network'), failure.detail, t)
     case 'payload': return withDetail(t('price.failure.payload'), failure.detail, t)
