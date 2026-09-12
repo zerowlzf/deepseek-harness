@@ -1,6 +1,9 @@
 // Billing settings page: the DeepSeek account balance the Host reads, then one
-// rate row per model the user already configured. Rates are per million tokens
-// in the account's currency, which is the unit the provider bills in.
+// card per provider the user actually configured. A card is closed by default
+// and shows the models its rates apply to, the way the Models page shows a
+// provider; the price fields appear behind its edit control. Rates are per
+// million tokens in the account's currency, which is the unit the provider
+// bills in.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -53,7 +56,9 @@ async function loadGroups(
   ctx: ClientContext,
   describe: {
     ensure(): Promise<void>
-    getSnapshot(): { view: { namespaces: readonly { ns: string; value: unknown }[] } | undefined }
+    getSnapshot(): {
+      view: { namespaces: readonly { ns: string; value: unknown; user?: unknown }[] } | undefined
+    }
   },
 ): Promise<ProviderRouteGroup[]> {
   const [registered, directory] = await Promise.all([
@@ -67,6 +72,7 @@ async function loadGroups(
   return providerRoutes(directory.value, registered.value, view.namespaces.map(entry => ({
     ns: entry.ns,
     value: entry.value,
+    ...entry.user === undefined ? {} : { user: entry.user },
   })))
 }
 
@@ -93,6 +99,9 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
   const [failure, setFailure] = useState('')
   const [manual, setManual] = useState('')
   const [manualError, setManualError] = useState(false)
+  // One provider card is open at a time: the page shows what the rates apply to
+  // (the models the user configured), and the fields appear on demand.
+  const [editing, setEditing] = useState<string | undefined>(undefined)
   const rates = snapshot.value?.models ?? {}
   const balance = snapshot.value?.cache ?? null
 
@@ -110,14 +119,16 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
     return () => { for (const dispose of disposers) dispose() }
   }, [ctx, reload])
 
-  // Every model row the page shows, keyed by its owning provider: the models
-  // that provider's own profile declares plus the stored routes whose model it
-  // no longer advertises, so a stale row stays editable and clearable. A
-  // stored route under a provider this deployment no longer declares keeps its
-  // own key, which is what lets the row address the `provider/model` it edits.
-  const modelsByProvider = useMemo(() => {
+  // Every provider card the page shows: the ones the user configured (or that
+  // the adapter serves without configuration), plus any provider a stored rate
+  // row still names, so a route whose provider went away stays editable and
+  // clearable. A catalogue row nobody configured carries nothing to price and
+  // is left out.
+  const cards = useMemo(() => {
     const byProvider = new Map<string, string[]>()
     for (const group of groups) {
+      if (!group.configured && !Object.keys(rates).some(key =>
+        key.startsWith(`${group.provider}${ROUTE_SEPARATOR}`))) continue
       const models = [...group.models]
       for (const key of Object.keys(rates)) {
         if (!key.startsWith(`${group.provider}${ROUTE_SEPARATOR}`)) continue
@@ -131,7 +142,7 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
       if (route === undefined || byProvider.has(route.provider)) continue
       byProvider.set(route.provider, [route.model])
     }
-    return byProvider
+    return [...byProvider]
   }, [groups, rates])
 
   const nameOf = (provider: string): string =>
@@ -195,20 +206,20 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
     }
     setManualError(false)
     setManual('')
-    // A hand-added route joins the directory for this render, so its row is
-    // immediately editable; the group carries the typed provider id and name.
+    // Below the open provider, the typed route is already in the draft table;
+    // its row renders as soon as its price is saved.
     const provider = typed.slice(0, at)
-    setGroups(current => current.some(group => group.provider === provider)
-      ? current.map(group => group.provider === provider && !group.models.includes(typed.slice(at + 1))
-        ? { ...group, models: [...group.models, typed.slice(at + 1)] }
-        : group)
-      : [...current, {
+    if (!groups.some(group => group.provider === provider)) {
+      setGroups(current => [...current, {
         provider,
         displayName: provider,
         models: [typed.slice(at + 1)],
         modelsReadable: true,
         official: false,
+        configured: true,
       }])
+    }
+    setEditing(provider)
   }
 
   return (
@@ -244,76 +255,111 @@ export function BillingSection({ scope, ctx, t }: BillingSectionProps) {
 
       <section className={css.rates} data-billing-rates>
         <h3 className={css.sectionTitle}>{t('section.providers')}</h3>
-        {groups.length === 0 && modelsByProvider.size === 0 && (
-          <p className={css.empty}>{t('section.providersEmpty')}</p>
-        )}
-        {[...modelsByProvider].map(([provider, models]) => {
+        {cards.length === 0 && <p className={css.empty}>{t('section.providersEmpty')}</p>}
+        {cards.map(([provider, models]) => {
           const group = groups.find(candidate => candidate.provider === provider)
+          const open = editing === provider
+          const priced = models.filter(model => rates[`${provider}${ROUTE_SEPARATOR}${model}`] !== undefined).length
           return (
             <div key={provider} className={css.card}>
               <header className={css.cardHead}>
                 <span className={css.cardTitle}>
                   {group === undefined ? provider : nameOf(provider)}
                   {group?.official === true && <span className={css.badge}>{t('section.officialBadge')}</span>}
+                  {/* The summary is what the closed card carries: which models
+                      the rates apply to, and how many of them are priced. */}
+                  <span className={css.cardMeta}>
+                    {group !== undefined && !group.modelsReadable
+                      ? t('section.providerPathUnknown')
+                      : t('section.modelCount', { count: models.length })}
+                    {priced > 0 && <span className={css.pricedBadge}>{t('section.pricedCount', { count: priced })}</span>}
+                  </span>
                 </span>
-                <span className={css.providerId}>{provider}</span>
+                <span className={css.actions}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-expanded={open}
+                    aria-label={t(open ? 'section.collapseProvider' : 'section.editProvider', { provider })}
+                    onClick={() => { setEditing(open ? undefined : provider) }}
+                  >
+                    {t(open ? 'section.collapse' : 'section.edit')}
+                  </Button>
+                </span>
               </header>
-              {group !== undefined && !group.modelsReadable && (
-                <div className={css.note}>{t('section.providerPathUnknown')}</div>
-              )}
-              {models.map((model) => {
-                const route = `${provider}${ROUTE_SEPARATOR}${model}`
-                return (
-                  <div key={route} className={css.row} data-billing-rate-row={route}>
-                    <span className={css.modelName} title={model}>{model}</span>
-                    <div className={css.fields}>
-                      {FIELDS.map(field => (
-                        <label key={field} className={css.field}>
-                          <span className={css.fieldLabel}>{t(FIELD_KEYS[field])}</span>
-                          <input
-                            className={css.input}
-                            type="text"
-                            inputMode="decimal"
-                            value={valueOf(route, field)}
-                            placeholder="0"
-                            disabled={!snapshot.writable}
-                            aria-label={`${route} ${t(FIELD_KEYS[field])}`}
-                            onChange={(event) => {
-                              const text = event.currentTarget.value
-                              setDrafts((current) => {
-                                const next = new Map(current)
-                                next.set(draftKey(route, field), text)
-                                return next
-                              })
-                            }}
-                          />
-                        </label>
-                      ))}
-                      <div className={css.actions}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!snapshot.writable || status === 'saving'}
-                          onClick={() => { void clear(route) }}
-                        >
-                          {t('section.clear')}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          disabled={!snapshot.writable || status === 'saving'}
-                          onClick={() => { void save(route) }}
-                        >
-                          {status === 'saving' ? t('section.saving') : t('section.save')}
-                        </Button>
+              {open && (
+                <div className={css.models} data-billing-provider-models={provider}>
+                  {models.map((model) => {
+                    const route = `${provider}${ROUTE_SEPARATOR}${model}`
+                    return (
+                      <div key={route} className={css.row} data-billing-rate-row={route}>
+                        <span className={css.modelName} title={model}>{model}</span>
+                        <div className={css.fields}>
+                          {FIELDS.map(field => (
+                            <label key={field} className={css.field}>
+                              <span className={css.fieldLabel}>{t(FIELD_KEYS[field])}</span>
+                              <input
+                                className={css.input}
+                                type="text"
+                                inputMode="decimal"
+                                value={valueOf(route, field)}
+                                placeholder="0"
+                                disabled={!snapshot.writable}
+                                aria-label={`${route} ${t(FIELD_KEYS[field])}`}
+                                onChange={(event) => {
+                                  const text = event.currentTarget.value
+                                  setDrafts((current) => {
+                                    const next = new Map(current)
+                                    next.set(draftKey(route, field), text)
+                                    return next
+                                  })
+                                }}
+                              />
+                            </label>
+                          ))}
+                          <div className={css.actions}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!snapshot.writable || status === 'saving'}
+                              onClick={() => { void clear(route) }}
+                            >
+                              {t('section.clear')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              disabled={!snapshot.writable || status === 'saving'}
+                              onClick={() => { void save(route) }}
+                            >
+                              {status === 'saving' ? t('section.saving') : t('section.save')}
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )
+                  })}
+                  {models.length === 0 && <p className={css.empty}>{t('section.modelsEmpty')}</p>}
+                  <div className={css.addRow}>
+                    <input
+                      className={css.input}
+                      type="text"
+                      value={manual}
+                      placeholder={t('section.addPlaceholder')}
+                      aria-label={t('section.addRouteTo', { provider })}
+                      onChange={(event) => { setManual(event.currentTarget.value) }}
+                      onKeyDown={(event) => { if (event.key === 'Enter') addManual() }}
+                    />
+                    <Button size="sm" variant="outline" onClick={addManual}>{t('section.add')}</Button>
                   </div>
-                )
-              })}
+                  {manualError && <div className={css.warn}>{t('section.invalidRoute')}</div>}
+                </div>
+              )}
             </div>
           )
         })}
+        {/* The page's own entry point for a route no directory declares: it
+            opens the provider it names, whose card then holds the row. */}
         <div className={css.card}>
           <header className={css.cardHead}>
             <span className={css.cardTitle}>{t('section.addRoute')}</span>

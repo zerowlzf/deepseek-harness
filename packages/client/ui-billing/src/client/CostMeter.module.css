@@ -1,39 +1,13 @@
-/* Billing pills under the composer, matching the shipped stats pills: 13/20
-   tertiary text tier with a hover-pill affordance. Each pill's dialog wears
-   the shared stat-dialog.module.css skin.
-
-   The composer dock is a centred column with one row per registered entry, so
-   this entry shares the line with the shipped turn/step and token pills by
-   pulling itself up by exactly one row: the shipped row is 26px tall with the
-   same 4px top padding and the same side clearance, so the two rows coincide.
-
-   Coinciding is not enough on its own: that row centres a group whose width
-   follows the figures it reads, so a second row that centred or right-aligned
-   its own content would draw through it. This row instead starts its pills a
-   share of the shared box from the left, which keeps them clear of the widest
-   reading the shipped group can produce and lets the two groups read as one
-   line: the shipped figures, then the cost of the session and the balance. */
+/* Billing figures inside the shipped composer stats row, wearing the same
+   13/20 tertiary tier as the pills beside them. The row owns placement, the
+   separator, and wrapping; this module owns only the pills' own skin, so a
+   contribution cannot move the row it joined. */
 
 .root {
-  display: flex;
-  justify-content: flex-start;
+  display: inline-flex;
   align-items: center;
-  column-gap: 12px;
-  max-width: var(--dsh-chat-content-width);
-  width: 100%;
-  box-sizing: border-box;
-  /* `41.2%` of the box is 280px at the 680px clamp: the shipped group's widest
-     reading is 320px, but it is centred, so its first pill starts 180px in and
-     its last one ends at 500px — this inset clears that end by 12px once the
-     16px side inset is added. */
-  padding: 4px 0px 0px calc(41.2% + 16px);
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
-  align-self: flex-end;
-  margin-top: -26px;
-  /* Overlapping the shipped row by one row height ends outside this entry's
-     own normal-flow box, so clipping on this element would cut the pills. */
-  overflow: visible;
+  gap: 12px;
+  min-width: 0;
 }
 
 /* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */

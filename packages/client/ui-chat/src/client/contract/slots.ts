@@ -210,6 +210,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.chat.turnTail': { kind: 'chain'; scope: 'session'; owner: TurnTailOwnerProps }
     /**
+     * Trailing figures inside the shipped composer stats row, after the
+     * turn/step and token pills and behind a divider. Declared by this package
+     * and rendered by `StatsPills` itself, so a contribution shares that row's
+     * centred group rather than standing beside it as a second dock row. The
+     * row is the composer's own; a contribution owns only its own figures.
+     */
+    'conversation.composer.stats': { kind: 'list'; scope: 'session' }
+    /**
      * Ordered actions for one finalized assistant message. Each entry receives
      * the durable message id; a fresh `id` adds an action and reusing one replaces
      * that entry. With no entries, the standard action row remains unchanged.

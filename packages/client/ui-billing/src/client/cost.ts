@@ -134,21 +134,25 @@ export function sessionCost(steps: readonly SessionCostStep[], rates: RateTable)
  * per route. A retried attempt makes the aggregate larger than the surviving
  * samples; that difference is charged at the last route's rate, which keeps
  * the priced total equal to the tokens the provider reported.
+ *
+ * A turn whose assistant nodes are outside the loaded window — or whose turn
+ * was interrupted, so no step survived — carries no attempts at all, and the
+ * two named routes in its own accounting are then the only evidence there is.
+ * One stretch per named route states what is known; inventing a split would
+ * not.
  * @param usage - the turn's exact accounting.
  * @param attempts - loaded attempts of the turn, route by route, in order.
- * @returns one usage row per route, or an empty list when the turn has none.
+ * @returns one usage row per route, or an empty list when the accounting names none.
  */
 export function turnRouteUsage(
   usage: TurnTokenUsage,
   attempts: readonly { readonly route: string; readonly buckets: TurnBuckets }[],
 ): TurnRouteUsage[] {
-  if (attempts.length === 0) return []
-  const total: TurnBuckets = {
-    uncachedInputTokens: usage.uncachedInputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens ?? 0,
-    cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+  if (attempts.length === 0) {
+    const named = (usage.routes ?? []).map(route => routeKey(route.provider, route.model))
+    return named.length === 0 ? [] : named.map(route => ({ route, buckets: turnBuckets(usage) }))
   }
+  const total: TurnBuckets = turnBuckets(usage)
   const summed = attempts.reduce(
     (accumulated, attempt) => ({
       uncachedInputTokens: accumulated.uncachedInputTokens + attempt.buckets.uncachedInputTokens,
@@ -183,6 +187,20 @@ export function turnRouteUsage(
     }
   }
   return rows
+}
+
+/**
+ * One turn's aggregate accounting as priceable buckets.
+ * @param usage - the turn's exact accounting.
+ * @returns the four buckets, with the absent cache counts read as zero.
+ */
+function turnBuckets(usage: TurnTokenUsage): TurnBuckets {
+  return {
+    uncachedInputTokens: usage.uncachedInputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? 0,
+    cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+  }
 }
 
 /**

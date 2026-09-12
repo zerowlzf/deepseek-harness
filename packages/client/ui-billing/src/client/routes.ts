@@ -1,11 +1,13 @@
 /**
  * Route discovery for the Billing settings page.
  *
- * The page lists the models the user already configured, so it reads the same
- * two facts the Models page joins: the registered provider routes (with their
- * settings address) and the profile value stored at that address. Model ids
- * come out of that profile rather than out of a new Host API, because the
- * profile is what the adapter itself resolves.
+ * The page lists the models the user actually configured, so it reads the same
+ * facts the Models page joins: the registered provider routes (with their
+ * settings address) and the profile stored at that address. Model ids come out
+ * of that profile rather than out of a new Host API, because the profile is
+ * what the adapter itself resolves; whether a provider is configured at all
+ * comes from the user layer of its settings namespace, which is the same
+ * question the Models page answers with its credential and profile reads.
  *
  * @module @deepseek-ai/dsh-client-ui-billing/routes
  */
@@ -25,6 +27,12 @@ export interface ProviderRouteGroup {
   readonly modelsReadable: boolean
   /** Whether this route is the official DeepSeek provider. */
   readonly official: boolean
+  /**
+   * Whether the user layer configures this provider, or the adapter serves it
+   * without configuration. An unconfigured catalogue entry carries no models to
+   * price, so the page leaves it out.
+   */
+  readonly configured: boolean
 }
 
 /** Provider route id of the shipped DeepSeek adapter. */
@@ -81,13 +89,36 @@ interface DirectoryEntry {
 /** One settings namespace as the describe mirror reports it. */
 interface NamespaceView {
   readonly ns: string
+  /** Resolved value across every layer, base and shipped defaults included. */
   readonly value: unknown
+  /** The user layer alone, absent when the document configures nothing here. */
+  readonly user?: unknown
+}
+
+/**
+ * Whether the user layer names this provider's profile.
+ *
+ * A directory entry without a settings address cannot be answered this way and
+ * reports `undefined`, which leaves the caller to decide from other evidence.
+ * @param entry - directory row carrying the provider's settings address.
+ * @param namespaces - namespace views keyed by namespace name.
+ * @returns whether the profile exists in the user layer, or undefined when the address is unusable.
+ */
+function userConfigures(
+  entry: DirectoryEntry,
+  namespaces: ReadonlyMap<string, NamespaceView>,
+): boolean | undefined {
+  if (entry.settingsNs === '' || entry.settingsPath.length === 0) return undefined
+  const view = namespaces.get(entry.settingsNs)
+  if (view === undefined) return undefined
+  if (view.user === undefined) return false
+  return valueAtPath(view.user, entry.settingsPath) !== undefined
 }
 
 /**
  * Join the provider directory with the settings values their profiles live in.
  * @param directory - `llm/listConfigurableProviders()` rows.
- * @param registered - `llm/listProviders()` rows (name only; used when undirected).
+ * @param registered - `llm/listProviders()` rows (live routes, name only).
  * @param namespaces - the settings describe mirror's namespace views.
  * @returns one group per provider, directory order first.
  */
@@ -96,14 +127,14 @@ export function providerRoutes(
   registered: readonly { readonly id: string; readonly name: string }[],
   namespaces: readonly NamespaceView[],
 ): ProviderRouteGroup[] {
-  const values = new Map(namespaces.map(view => [view.ns, view.value]))
+  const views = new Map(namespaces.map(view => [view.ns, view]))
+  const live = new Set(registered.map(provider => provider.id))
   const groups: ProviderRouteGroup[] = []
   const seen = new Set<string>()
   for (const entry of directory) {
     seen.add(entry.provider)
-    const profile = values.has(entry.settingsNs)
-      ? valueAtPath(values.get(entry.settingsNs), entry.settingsPath)
-      : undefined
+    const view = views.get(entry.settingsNs)
+    const profile = view === undefined ? undefined : valueAtPath(view.value, entry.settingsPath)
     const models = modelIdsOf(profile)
     groups.push({
       provider: entry.provider,
@@ -111,6 +142,10 @@ export function providerRoutes(
       models,
       modelsReadable: profile !== undefined,
       official: entry.provider === OFFICIAL_PROVIDER || entry.settingsNs === OFFICIAL_SETTINGS_NS,
+      // A catalogue row the user never configured carries nothing to price. A
+      // live route is configured by definition — the adapter registered it —
+      // and a base-layer profile is a deployment choice, so both stay listed.
+      configured: userConfigures(entry, views) === true || live.has(entry.provider) || profile !== undefined,
     })
   }
   for (const provider of registered) {
@@ -121,6 +156,7 @@ export function providerRoutes(
       models: [],
       modelsReadable: false,
       official: provider.id === OFFICIAL_PROVIDER,
+      configured: true,
     })
   }
   return groups

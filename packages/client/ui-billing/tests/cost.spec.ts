@@ -221,10 +221,41 @@ describe('provider route discovery', () => {
       ],
     )
     expect(groups).toEqual([
-      { provider: 'bai', displayName: 'BAI', models: ['glm-5.3-flash'], modelsReadable: true, official: false },
-      { provider: 'x', displayName: 'X', models: [], modelsReadable: false, official: false },
-      { provider: 'live-only', displayName: 'Live only', models: [], modelsReadable: false, official: false },
+      {
+        provider: 'bai',
+        displayName: 'BAI',
+        models: ['glm-5.3-flash'],
+        modelsReadable: true,
+        official: false,
+        configured: true,
+      },
+      { provider: 'x', displayName: 'X', models: [], modelsReadable: false, official: false, configured: false },
+      {
+        provider: 'live-only',
+        displayName: 'Live only',
+        models: [],
+        modelsReadable: false,
+        official: false,
+        configured: true,
+      },
     ])
+  })
+
+  it('leaves a catalogue provider the user never configured out of the priced set', () => {
+    const [catalogue, configured] = providerRoutes(
+      [
+        { provider: 'zai', displayName: 'zai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'zai'] },
+        { provider: 'bai', displayName: 'BAI', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'bai'] },
+      ],
+      [],
+      [{
+        ns: 'llm-pi-ai',
+        value: { providers: { bai: { models: [{ id: 'glm-5.3-flash' }] } } },
+        user: { providers: { bai: { apiKeyEnv: 'BAI_API_KEY', models: [{ id: 'glm-5.3-flash' }] } } },
+      }],
+    )
+    expect(catalogue?.configured).toBe(false)
+    expect(configured?.configured).toBe(true)
   })
 
   it('marks the official DeepSeek route by provider id or settings namespace', () => {

@@ -48,6 +48,8 @@ describe('render branch tails', () => {
       <StatsPills
         t={t}
         useChat={bindSnapshotSelector(source)}
+        renderSlot={(() => null) as React.ComponentProps<typeof StatsPills>['renderSlot']}
+        SessionProvider={({ children }) => <>{children}</>}
         useProjection={() => undefined}
       />,
     )

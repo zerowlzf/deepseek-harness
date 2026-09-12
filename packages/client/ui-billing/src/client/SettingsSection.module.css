@@ -1,6 +1,8 @@
 /* Billing settings page: an intro line, the read-only balance card, then one
-   card per provider holding a rate row per model. Tokens match the shipped
-   settings pages (secondary text tier, alias borders and surfaces). */
+   card per configured provider. A card is closed by default and summarises the
+   models its rates apply to; the price fields appear behind its edit control.
+   Tokens match the shipped settings pages (secondary text tier, alias borders
+   and surfaces). */
 
 .page {
   display: flex;
@@ -62,6 +64,25 @@
   flex: none;
 }
 
+/* Closed-card summary: how many models these rates cover, and how many of them
+   already carry a price. */
+.cardMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
+.pricedBadge {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .cardValue {
   font-variant-numeric: tabular-nums;
 }
@@ -76,16 +97,11 @@
   line-height: 16px;
 }
 
-.providerId {
-  color: var(--dsw-alias-label-tertiary);
-  font-weight: 400;
-}
-
-.cardMeta {
+/* The open card's model list; the closed card carries only its header. */
+.models {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  color: var(--dsw-alias-label-tertiary);
+  flex-direction: column;
+  gap: 10px;
 }
 
 .row {
@@ -153,6 +169,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.addRow .input {
+  width: 220px;
 }
 
 .note {

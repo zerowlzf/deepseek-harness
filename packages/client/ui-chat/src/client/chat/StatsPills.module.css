@@ -1,10 +1,14 @@
 /* Two icon pills side by side under the composer, 13/20 tertiary text tier
    with a hover-pill affordance; each pill's click-open panel wears the shared
-   stat-dialog.module.css skin. */
+   stat-dialog.module.css skin. A `conversation.composer.stats` contribution
+   joins the same centred group behind a divider, so the group stays one line
+   and stays centred whatever the trailing figures are. */
 
 .root {
   display: flex;
   justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   max-width: var(--dsh-chat-content-width);
   width: 100%;
@@ -13,6 +17,21 @@
   padding: 4px calc(var(--dsh-composer-side-clearance) + 16px) 0px;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+/* Separates the shipped readings from a trailing contribution; the row's flex
+   gap spaces it on both sides, so it needs no margin of its own. */
+.trailingRule {
+  width: 1px;
+  height: 12px;
+  background: var(--dsw-alias-separator-primary);
+}
+
+/* The hole takes part in the row's own flex layout: a contribution's items sit
+   beside the pills instead of inside a box the row would have to measure. The
+   element itself is only the divider's occupancy probe. */
+.trailingProbe {
+  display: contents;
 }
 
 /* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */
