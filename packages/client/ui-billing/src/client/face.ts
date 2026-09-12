@@ -28,14 +28,17 @@ export interface BillingInjected {
    */
   routeGroups: () => Promise<void>
   /**
-   * Write one provider's price fields, or remove its stored rates when the
-   * fields are all empty.
+   * Write one route's rates, or remove its stored row when nothing is left.
    * @param route - the `provider/model` key to write.
-   * @param fields - the field values as typed, where an unparsable or empty
-   * field is dropped from the write.
+   * @param peak - typed peak-window values by field name, where an unparsable field is dropped from the write.
+   * @param offPeak - typed off-peak-window values by field name; all three empty clears the row's second band.
    * @returns settlement after the namespace commits the change.
    */
-  saveRate: (route: string, fields: Readonly<Record<string, string>>) => Promise<void>
+  saveRate: (
+    route: string,
+    peak: Readonly<Record<string, string>>,
+    offPeak: Readonly<Record<string, string>>,
+  ) => Promise<void>
   /**
    * Remove one stored rate row.
    * @param route - the `provider/model` key to clear.

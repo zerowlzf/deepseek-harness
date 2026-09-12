@@ -2,10 +2,11 @@
  * The `ui-billing` settings namespace: its name, value contract, schema, and
  * the pure rate fold both faces share.
  *
- * The value mixes two kinds of fact. `models` is user configuration — one rate
- * row per `provider/model` route, written by the Billing settings page. `cache`
- * is Host-owned state: the newest DeepSeek balance the Host could read, which
- * the browser displays without a Remote of its own.
+ * The value mixes three kinds of fact. `models` is user configuration — one
+ * rate row per `provider/model` route, written by the Billing settings page.
+ * `cache` and `official` are Host-owned state: the newest DeepSeek balance and
+ * the newest published price table the Host could read, which the browser
+ * displays without a Remote of its own.
  *
  * @module @deepseek-ai/dsh-client-ui-billing/settings
  */
@@ -24,8 +25,8 @@ export const ROUTE_SEPARATOR = '/'
  */
 export const DEFAULT_CURRENCY = 'CNY'
 
-/** Per-million-token rates for one route, in the configured display currency. */
-export interface ModelRate {
+/** Per-million-token rates for one route during one of a provider's price windows. */
+export interface RateBand {
   /** Cached prompt input. */
   cacheHit: number
   /** Uncached prompt input, including cache writes. */
@@ -34,8 +35,76 @@ export interface ModelRate {
   output: number
 }
 
-/** The three rate fields, in display order. */
+/**
+ * One route's rates, in the configured display currency.
+ *
+ * The three flat fields are the peak band, which is what a provider publishing
+ * a single price charges at every hour. `offPeak` is the band charged outside
+ * that provider's peak window; a row without one costs the same all day, which
+ * is the honest reading of a provider that publishes one figure.
+ */
+export interface ModelRate extends RateBand {
+  /** Rates charged outside the peak window; absent means one price at every hour. */
+  offPeak?: RateBand | undefined
+}
+
+/** The three rate fields, in display order, within one band. */
 export const RATE_FIELDS = ['cacheHit', 'cacheMiss', 'output'] as const
+
+/** Which of a provider's two daily price windows a moment falls in. */
+export type PriceWindow = 'peak' | 'offPeak'
+
+/** Beijing runs on UTC+8 with no daylight saving, and the published window is stated there. */
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000
+
+/**
+ * The price window in force at one moment.
+ *
+ * DeepSeek's published price page defines peak as Beijing time Monday–Friday
+ * 09:00–12:00 and 14:00–18:00, and every other hour as off-peak at half the
+ * peak rates. That window is the provider's published rule rather than a
+ * deployment choice, so it is fixed here; a deployment billed on another
+ * calendar overrides the affected routes' rates instead.
+ * @param at - epoch milliseconds.
+ * @returns the window in force at that instant.
+ */
+export function priceWindowAt(at: number): PriceWindow {
+  const beijing = new Date(at + BEIJING_OFFSET_MS)
+  const day = beijing.getUTCDay()
+  if (day === 0 || day === 6) return 'offPeak'
+  const hour = beijing.getUTCHours()
+  return (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18) ? 'peak' : 'offPeak'
+}
+
+/**
+ * The rates one route charged in one window.
+ * @param rate - the route's stored or published row.
+ * @param window - the window the charge falls in.
+ * @returns the off-peak band while off-peak is in force, otherwise the row's own three figures.
+ */
+export function bandFor(rate: ModelRate, window: PriceWindow): RateBand {
+  if (window === 'offPeak' && rate.offPeak !== undefined) return rate.offPeak
+  return { cacheHit: rate.cacheHit, cacheMiss: rate.cacheMiss, output: rate.output }
+}
+
+/**
+ * The rates one route charged at one moment.
+ * @param rate - the route's stored or published row.
+ * @param at - epoch milliseconds the charge is attributed to.
+ * @returns the band in force at that instant.
+ */
+export function bandAt(rate: ModelRate, at: number): RateBand {
+  return bandFor(rate, priceWindowAt(at))
+}
+
+/**
+ * Whether one route's rates depend on the window.
+ * @param rate - the route's stored or published row, or undefined when it has none.
+ * @returns whether the row states an off-peak band, which is what a surface names a window for.
+ */
+export function pricesByWindow(rate: ModelRate | undefined): boolean {
+  return rate?.offPeak !== undefined
+}
 
 /** One field of {@link ModelRate}. */
 export type RateField = (typeof RATE_FIELDS)[number]
@@ -65,22 +134,43 @@ export interface BalanceSnapshot {
 }
 
 /**
- * Why one Host balance read produced no snapshot.
+ * Why one Host read produced no value.
  *
  * The reason is structured rather than a sentence because the browser renders
  * it: the Host half owns the read and the browser owns the copy, so a failure
  * crosses that boundary as a kind plus the values its sentence needs, with the
  * technical detail a person cannot translate riding along for a second line.
  */
-export type BalanceFailure =
+export type ReadFailure =
   /** Nothing held a value for the referenced key. */
   | { readonly kind: 'noKey'; readonly ref: string }
-  /** The account API answered with a status other than 200. */
+  /** The endpoint answered with a status other than 200. */
   | { readonly kind: 'http'; readonly status: number }
   /** The request itself did not complete. */
   | { readonly kind: 'network'; readonly detail: string }
   /** The response arrived but could not be read as the documented payload. */
   | { readonly kind: 'payload'; readonly detail: string }
+
+/** Why the balance read produced no snapshot. */
+export type BalanceFailure = ReadFailure
+
+/** Why the price read produced no usable table; a price page needs no key. */
+export type PriceFailure =
+  | Exclude<ReadFailure, { readonly kind: 'noKey' }>
+  /** The page states its figures in a currency the document does not price in. */
+  | { readonly kind: 'currency'; readonly found: string; readonly expected: string }
+
+/** Rates the Host read from the provider's published price page. */
+export interface PriceSnapshot {
+  /** Model id → published rates, both windows, exactly as that page states them. */
+  models: Record<string, ModelRate>
+  /** Currency the page states its figures in. */
+  currency: string
+  /** When the Host read it, in epoch milliseconds. */
+  at: number
+  /** Page the figures came from. */
+  source: string
+}
 
 /** The namespace's complete value. */
 export interface BillingSettings {
@@ -94,8 +184,12 @@ export interface BillingSettings {
   models: Record<string, ModelRate>
   /** Newest Host-read balance, or null before the first successful read. */
   cache: BalanceSnapshot | null
-  /** Why the newest read failed, or null when it succeeded or never ran. */
-  cacheError: BalanceFailure | null
+  /** Why the newest balance read failed, or null when it succeeded or never ran. */
+  cacheError: ReadFailure | null
+  /** Newest Host-read published price table, or null before the first successful read. */
+  official: PriceSnapshot | null
+  /** Why the newest price read failed, or null when it succeeded or never ran. */
+  officialError: PriceFailure | null
 }
 
 /**
@@ -119,10 +213,20 @@ export function splitRouteKey(key: string): { provider: string; model: string } 
   return { provider: key.slice(0, at), model: key.slice(at + 1) }
 }
 
+const bandSchema: Schema<RateBand> = Schema.object({
+  cacheHit: Schema.number().default(0),
+  cacheMiss: Schema.number().default(0),
+  output: Schema.number().default(0),
+})
+
+// The optional band is a union with `undefined` rather than a bare nested
+// object: a nested object resolves an absent key into a band of zeroes, which
+// would bill every off-peak hour at nothing instead of at the peak rate.
 const rateSchema: Schema<ModelRate> = Schema.object({
   cacheHit: Schema.number().default(0),
   cacheMiss: Schema.number().default(0),
   output: Schema.number().default(0),
+  offPeak: Schema.union([Schema.const(undefined), bandSchema]),
 })
 
 const balanceSchema: Schema<BalanceSnapshot | null> = Schema.union([
@@ -135,6 +239,9 @@ const balanceSchema: Schema<BalanceSnapshot | null> = Schema.union([
   }),
 ])
 
+// The two failure unions repeat their shared arms rather than reusing one
+// array: a union's members are inferred from the literal array it is given, and
+// an annotated array of member schemas is not assignable to it.
 const failureSchema: Schema<BalanceFailure | null> = Schema.union([
   Schema.const(null),
   Schema.object({ kind: Schema.const('noKey').required(), ref: Schema.string().default('') }),
@@ -143,12 +250,36 @@ const failureSchema: Schema<BalanceFailure | null> = Schema.union([
   Schema.object({ kind: Schema.const('payload').required(), detail: Schema.string().default('') }),
 ])
 
+const priceFailureSchema: Schema<PriceFailure | null> = Schema.union([
+  Schema.const(null),
+  Schema.object({ kind: Schema.const('http').required(), status: Schema.number().default(0) }),
+  Schema.object({ kind: Schema.const('network').required(), detail: Schema.string().default('') }),
+  Schema.object({ kind: Schema.const('payload').required(), detail: Schema.string().default('') }),
+  Schema.object({
+    kind: Schema.const('currency').required(),
+    found: Schema.string().default(''),
+    expected: Schema.string().default(''),
+  }),
+])
+
+const priceSnapshotSchema: Schema<PriceSnapshot | null> = Schema.union([
+  Schema.const(null),
+  Schema.object({
+    models: Schema.dict(rateSchema).default({}),
+    currency: Schema.string().default(DEFAULT_CURRENCY),
+    at: Schema.number().default(0),
+    source: Schema.string().default(''),
+  }),
+])
+
 /** The namespace schema; `settings.register` resolves and validates against it. */
 export const BillingSettingsSchema: Schema<BillingSettings> = Schema.object({
   currency: Schema.string().default(DEFAULT_CURRENCY),
   models: Schema.dict(rateSchema).default({}),
   cache: balanceSchema.default(null),
   cacheError: failureSchema.default(null),
+  official: priceSnapshotSchema.default(null),
+  officialError: priceFailureSchema.default(null),
 })
 
 /** Token buckets one route was billed for, in the provider's own units. */
@@ -162,17 +293,17 @@ export interface RouteUsage {
 }
 
 /**
- * Price one route's buckets.
+ * Price one route's buckets under one band.
  *
  * Rates are per million tokens, so the result is in the configured currency.
  * Every bucket is charged at its own rate; a route with no configured row
  * prices to zero, and the caller decides whether that absence is worth
  * displaying.
- * @param rate - the route's configured rates.
+ * @param rate - the rates in force for this charge, as {@link bandAt} selects them.
  * @param usage - the route's billed buckets.
  * @returns the cost in the configured currency.
  */
-export function priceUsage(rate: ModelRate, usage: RouteUsage): number {
+export function priceUsage(rate: RateBand, usage: RouteUsage): number {
   return (usage.cacheHitTokens * rate.cacheHit
     + usage.cacheMissTokens * rate.cacheMiss
     + usage.outputTokens * rate.output) / 1_000_000

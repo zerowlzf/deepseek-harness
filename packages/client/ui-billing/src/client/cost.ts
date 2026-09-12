@@ -9,12 +9,19 @@
  * turn-tail accounting — the same number the shipped Turn-usage panel shows —
  * and prices each attempt at the rate of the route that produced it.
  *
+ * Both folds charge every stretch in the price window it was observed in,
+ * because a published rate is not one number per day: the peak window and the
+ * off-peak window that surrounds it are priced apart, and a stretch carries the
+ * moment it happened so the charge can follow the clock rather than the rates
+ * alone.
+ *
  * @module @deepseek-ai/dsh-client-ui-billing/cost
  */
 
 import type { TurnTokenUsage } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
-import { priceUsage, routeKey, type ModelRate } from '../settings.ts'
+import { bandAt, bandFor, priceUsage, priceWindowAt, routeKey, type PriceWindow } from '../settings.ts'
+import type { ModelRate } from '../settings.ts'
 
 /** Rate lookup: one route's configured rates, keyed `provider/model`. */
 export type RateTable = Readonly<Record<string, ModelRate>>
@@ -31,6 +38,8 @@ export interface SessionBuckets {
 export interface SessionCostStep {
   /** `provider/model` the stretch was billed under. */
   readonly route: string
+  /** Epoch milliseconds the stretch was observed at; it selects the price window. */
+  readonly at: number
   /** Buckets billed during the stretch. */
   readonly buckets: SessionBuckets
 }
@@ -43,9 +52,24 @@ export interface TurnBuckets {
   readonly cacheWriteTokens: number
 }
 
-/** One route that contributed to a turn, with the buckets read for it. */
+/** One billed attempt of one turn, as the loaded window proves it. */
+export interface TurnAttempt {
+  /** `provider/model` that served the attempt. */
+  readonly route: string
+  /** Epoch milliseconds the attempt settled; it selects the price window. */
+  readonly at: number
+  /** Buckets the provider reported for the attempt. */
+  readonly buckets: TurnBuckets
+}
+
+/** One charge a turn incurred: a route, the window it was billed in, and its buckets. */
 export interface TurnRouteUsage {
   readonly route: string
+  /**
+   * Price window the row is charged in. A route publishing one price for the
+   * whole day is charged at `peak`, which for that route is simply its price.
+   */
+  readonly window: PriceWindow
   readonly buckets: TurnBuckets
 }
 
@@ -114,7 +138,7 @@ export function sessionCost(steps: readonly SessionCostStep[], rates: RateTable)
   for (const step of steps) {
     const rate = rates[step.route]
     if (rate === undefined) continue
-    total += priceUsage(rate, {
+    total += priceUsage(bandAt(rate, step.at), {
       // Cache writes are billed as uncached input, which is the bucket the
       // provider already reported them in for the prompt-side total.
       cacheMissTokens: step.buckets.uncachedInputTokens + step.buckets.cacheWriteTokens,
@@ -126,15 +150,31 @@ export function sessionCost(steps: readonly SessionCostStep[], rates: RateTable)
 }
 
 /**
- * Split one turn's exact accounting across its routes.
+ * The window one route's charge is identified by.
+ * @param route - the `provider/model` key charged.
+ * @param at - epoch milliseconds of the charge.
+ * @param rates - configured rates by route.
+ * @returns the window in force at `at`, or `peak` for a route that publishes one price.
+ */
+export function chargeWindow(route: string, at: number, rates: RateTable): PriceWindow {
+  return rates[route]?.offPeak === undefined ? 'peak' : priceWindowAt(at)
+}
+
+/**
+ * Split one turn's exact accounting across the charges it incurred.
  *
  * The turn-tail accounting carries one aggregate per bucket plus the set of
  * routes that billed it, and the loaded window carries each attempt's own
- * usage and route. Attempts on the same route are one row, summed; when they
- * account for the same total as the aggregate, those rows are exact per route.
- * A retried attempt makes the aggregate larger than the surviving samples; that
- * difference is charged at the last route's rate, which keeps the priced total
- * equal to the tokens the provider reported.
+ * usage, route, and time. Attempts on the same route and in the same price
+ * window are one row, summed; when they account for the same total as the
+ * aggregate, those rows are exact per charge. A retried attempt makes the
+ * aggregate larger than the surviving samples; that difference is charged at
+ * the last row's rate, which keeps the priced total equal to the tokens the
+ * provider reported.
+ *
+ * A route is split by window only when its rates state one, because a route
+ * with a single published price charges the same figure at every hour and two
+ * rows would state that once each.
  *
  * Without attempts the aggregate is all that is left, and it can be priced only
  * when a single route is named: every billed attempt ran there. Several named
@@ -143,34 +183,45 @@ export function sessionCost(steps: readonly SessionCostStep[], rates: RateTable)
  * and returns no rows, leaving the caller to name the routes it could not
  * attribute.
  * @param usage - the turn's exact accounting.
- * @param attempts - loaded attempts of the turn, route by route, in order.
- * @returns one usage row per route, or no rows when the turn cannot be
- * attributed to the routes its own accounting names.
+ * @param attempts - loaded attempts of the turn, in order.
+ * @param rates - configured rates by route, which say whether a route prices by window.
+ * @param at - epoch milliseconds the turn closed, used when no attempt time survives.
+ * @returns one row per charge, or no rows when the turn cannot be attributed to the routes its own accounting names.
  */
 export function turnRouteUsage(
   usage: TurnTokenUsage,
-  attempts: readonly { readonly route: string; readonly buckets: TurnBuckets }[],
+  attempts: readonly TurnAttempt[],
+  rates: RateTable,
+  at: number,
 ): TurnRouteUsage[] {
   if (attempts.length === 0) {
     const named = (usage.routes ?? []).map(route => routeKey(route.provider, route.model))
     const [only] = named
-    return named.length === 1 && only !== undefined ? [{ route: only, buckets: turnBuckets(usage) }] : []
+    return named.length === 1 && only !== undefined
+      ? [{ route: only, window: chargeWindow(only, at, rates), buckets: turnBuckets(usage) }]
+      : []
   }
-  // One row per route, in the order the routes were first billed: a Turn's steps
-  // on one route are one line of its bill, and a Turn that switched models gets
-  // a line for each.
-  const byRoute = new Map<string, TurnBuckets>()
+  // One row per charge, in the order they were first billed: a Turn's steps on
+  // one route in one window are one line of its bill, and a Turn that switched
+  // models or crossed a price boundary gets a line for each.
+  const byCharge = new Map<string, TurnRouteUsage>()
   for (const attempt of attempts) {
-    const previous = byRoute.get(attempt.route)
-    byRoute.set(attempt.route, previous === undefined ? attempt.buckets : addBuckets(previous, attempt.buckets))
+    const window = chargeWindow(attempt.route, attempt.at, rates)
+    const key = `${attempt.route}\u0000${window}`
+    const previous = byCharge.get(key)
+    byCharge.set(key, {
+      route: attempt.route,
+      window,
+      buckets: previous === undefined ? attempt.buckets : addBuckets(previous.buckets, attempt.buckets),
+    })
   }
-  const rows: TurnRouteUsage[] = [...byRoute].map(([route, buckets]) => ({ route, buckets }))
+  const rows = [...byCharge.values()]
   const summed = rows.reduce<TurnBuckets>((total, row) => addBuckets(total, row.buckets), emptyBuckets())
   const remainder = subtractBuckets(turnBuckets(usage), summed)
   if (!isEmptyTurnBuckets(remainder)) {
     const last = rows[rows.length - 1]
     if (last !== undefined) {
-      rows[rows.length - 1] = { route: last.route, buckets: addBuckets(last.buckets, remainder) }
+      rows[rows.length - 1] = { ...last, buckets: addBuckets(last.buckets, remainder) }
     }
   }
   return rows
@@ -224,8 +275,8 @@ function turnBuckets(usage: TurnTokenUsage): TurnBuckets {
 }
 
 /**
- * Price one turn's route rows.
- * @param rows - the turn's per-route buckets.
+ * Price one turn's charge rows.
+ * @param rows - the turn's per-charge buckets.
  * @param rates - configured rates by route.
  * @returns the priced total plus which routes were priced.
  */
@@ -240,7 +291,7 @@ export function turnCost(rows: readonly TurnRouteUsage[], rates: RateTable): Tur
       continue
     }
     if (!priced.includes(row.route)) priced.push(row.route)
-    total += priceUsage(rate, {
+    total += priceUsage(bandFor(rate, row.window), {
       cacheMissTokens: row.buckets.uncachedInputTokens + row.buckets.cacheWriteTokens,
       cacheHitTokens: row.buckets.cacheReadTokens,
       outputTokens: row.buckets.outputTokens,
