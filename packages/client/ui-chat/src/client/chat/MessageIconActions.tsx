@@ -48,6 +48,7 @@ export function MessageIconActions({
 }: MessageIconActionsProps) {
   const day = useCalendarDay()
   const reasonId = useId()
+  const empty = text.length === 0
   // Same success chrome as CodeBlock: a short check swap after the write,
   // gated so re-clicks during the window neither re-copy nor stack timers.
   const [copied, setCopied] = useState(false)
@@ -82,8 +83,18 @@ export function MessageIconActions({
   return (
     <div className={className === undefined ? css.actions : `${css.actions} ${className}`}>
       {clock === 'start' ? clockEl : null}
+      {/* A turn interrupted before any finalized text carries nothing to copy;
+          the control stays in the row (layout is stable across turns) and
+          reports itself unavailable rather than writing an empty clipboard. */}
       <Tooltip label={copied ? t('copied') : t('copy')} side="bottom">
-        <button type="button" className={css.action} aria-label={copied ? t('copied') : t('copy')} onClick={onCopy}>
+        <button
+          type="button"
+          className={css.action}
+          aria-label={copied ? t('copied') : t('copy')}
+          aria-disabled={empty || undefined}
+          data-unavailable={empty || undefined}
+          onClick={empty ? undefined : onCopy}
+        >
           {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
         </button>
       </Tooltip>

@@ -1,6 +1,7 @@
-// Composer-dock billing row: one cost pill for the session's accumulated
-// spend and one balance pill for the DeepSeek account, seated beside the
-// shipped turn/step and token pills and wearing the same skin.
+// Session billing figures for the shipped composer stats row: one cost pill for
+// the session's accumulated spend and one balance pill for the DeepSeek account,
+// seated by `conversation.composer.stats` inside the same centred group as the
+// turn/step and token pills rather than as a second dock row.
 //
 // The session cost is accumulated from the `tokenUsage` projection rather than
 // folded from the loaded window, because that projection is the whole durable
@@ -133,7 +134,7 @@ export function SessionCostMeter({ useProjection, scope, t }: SessionCostMeterPr
     : t('pill.balance', { amount: formatBalance(balance.total, balance.currency) })
 
   return (
-    <div className={css.root} data-composer-billing>
+    <span className={css.root} data-composer-billing>
       <Pill
         seat={costSeat}
         icon={<IconCoinOutline16 />}
@@ -178,7 +179,7 @@ export function SessionCostMeter({ useProjection, scope, t }: SessionCostMeterPr
           <div className={dialogCss.note}>{t('section.balanceError', { message: balanceError })}</div>
         )}
       </Pill>
-    </div>
+    </span>
   )
 }
 

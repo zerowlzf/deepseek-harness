@@ -73,21 +73,24 @@ export function apply(ctx: ClientContext): void {
     inject: injected,
   }, BillingSection))
 
-  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-    name: 'conversation.composer.dock',
+  // The shipped stats row owns the line these figures belong to, so the row's
+  // own trailing hole is the seat: it centres them with the pills they extend.
+  ctx.slots.inject('conversation.composer.stats', () => ctx.slots.register({
+    name: 'conversation.composer.stats',
     id: 'billing',
-    // After the shipped stats row, so the pair reads as its extension.
-    order: 1,
+    order: 0,
     locale: LOCALE_NS,
     inject: injected,
   }, SessionCostMeter))
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
-    // Every completed turn elects this entry; a turn whose durable accounting
-    // is still absent renders nothing. `priority` keeps the shipped
+    // Every completed turn elects this entry, including one interrupted before
+    // any finalized text: that turn still owns its accounting and still renders
+    // the row, so its cost is exactly what a reader wants there. A turn with no
+    // accounting at all renders nothing. `priority` keeps the shipped
     // produced-files entry (default 0) first, so a turn with files keeps its
-    // file row and the cost row follows it.
+    // file row and the cost pill follows it.
     select: (owner: TurnTailOwnerProps) => ({ turn: owner.turn.turn }),
     priority: 1,
     locale: LOCALE_NS,

@@ -41,7 +41,7 @@ Rates are in the currency the balance reports, per million tokens. A route with 
 
 ### Cost display
 
-The composer row carries a session-cost pill and a balance pill on the same line as the shipped turn/step and token pills: the composer dock is a centred column with one row per entry, so this row pulls itself up by the shipped row's height and starts its content 41.2% into the same 680px-clamped box, which is what clears the widest reading those pills can produce. The session total accumulates the `tokenUsage` projection — the whole durable log, not the loaded window — by pricing each growth of the running total at the route active when it grew, which is what keeps a mid-session model switch correctly split. Each completed turn gets its own cost row above the action icons, and the turn's action row keeps its cost dialog with a row per contributing route.
+The composer row carries a session-cost pill and a balance pill inside the shipped turn/step and token pills' own line: `conversation.composer.stats` is a hole that ui-chat's stats row renders itself, behind a divider it draws only while something occupies the hole, so these figures share the shipped group's centring instead of landing beside it. The session total accumulates the `tokenUsage` projection — the whole durable log, not the loaded window — by pricing each growth of the running total at the route active when it grew, which is what keeps a mid-session model switch correctly split. Each turn gets its own cost pill in the completed-turn action strip, priced from that turn's durable accounting with the loaded attempts splitting it per route and falling back to the session projection for a turn whose assistant rows are no longer loaded. An interrupted turn keeps that strip too: no closing message means no copy or branch target, but the accounting and the cost pill are what the row is for.
 
 Nothing here issues a model request or writes a session event: the pills are a read-only projection of usage the providers already reported.
 
@@ -79,7 +79,7 @@ cacheError: null
 
 ### Registration
 
-Three surfaces, each restored on unload: `settings.section` (the Billing page), `conversation.composer.dock` (the two pills, ordered after the shipped stats row), and the `conversation.chat.turnTail` chain (the per-turn cost row, at a lower chain priority than the shipped produced-files entry).
+Three surfaces, each restored on unload: `settings.section` (the Billing page), `conversation.composer.stats` (the two pills inside the shipped stats row), and the `conversation.chat.turnTail` chain (the per-turn cost pill in the completed-turn strip, at a lower chain priority than the shipped produced-files entry). The settings page lists one card per provider the user configured — or that a stored rate row still names — with the provider's models behind that card's own edit control, so a catalogue entry nobody configured carries no rate rows.
 
 </details>
 

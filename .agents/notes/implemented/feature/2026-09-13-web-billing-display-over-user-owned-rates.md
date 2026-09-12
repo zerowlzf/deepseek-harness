@@ -32,9 +32,15 @@ Nothing here issues a model request or appends a session event. The Host resolve
 
 ### Registration
 
-Three surfaces, each restored on unload: `settings.section` (the Billing page, which lists every provider the deployment can configure with one row per model its own settings profile declares, plus a hand-entry for a route no profile names), `conversation.composer.dock` (the session-cost and balance pills, ordered after the shipped stats row), and the `conversation.chat.turnTail` chain (the per-turn cost row, at a lower chain priority than the shipped produced-files entry so a turn with files keeps its file row).
+Three surfaces, each restored on unload: `settings.section` (the Billing page), `conversation.composer.stats` (the session-cost and balance pills), and the `conversation.chat.turnTail` chain (the per-turn cost pill, at a lower chain priority than the shipped produced-files entry so a turn with files keeps its file row).
 
-The dock is a centred column with one row per registered entry, and that shipped row centres a group whose width follows the figures it reads. The billing row therefore pulls itself up by exactly the shipped row's height and starts its own content a fixed share of the shared box from the left — 41.2% of a box that clamps at 680px — which clears the widest reading the shipped group can produce. Two rows that merely coincided would draw through each other.
+The composer figures belong to a line ui-chat already owns, so ui-chat declares the hole and its own stats row renders it: `conversation.composer.stats` is a session-scope `list` child of the `conversation.composer.dock` row, the row draws its divider only while the hole has an occupant, and the rendered children take the row's own flex gap. An earlier arrangement — a second dock row pulled up by the row's height and offset so its content began after the shipped pills — could only guess where a centred group of changing width would end, and drew through it when the guess was wrong.
+
+The per-turn pill hangs off the turn's action strip, which now renders for a turn interrupted before any finalized text. That arm previously returned before the strip existed, so an interrupted turn showed neither the shipped usage figures nor any contribution beside them; every turn of a session where the user interrupts mid-run therefore showed no cost at all. A turn carrying nothing to show — no closing message, no contribution, no accounting, and later evidence in its own turn — still renders nothing.
+
+The turn's price prefers the durable turn-tail accounting (per-route, from the loaded attempts) and falls back to the session projection under the newest known route, which is what prices a turn whose assistant rows have left the loaded window. `turnRouteUsage` reads the two routes the accounting itself names when no attempt survived, and states the aggregate under each rather than inventing a split.
+
+The settings page follows the shipped Models page: one card per provider the user configured, or that a stored rate row still names, with the provider's models behind that card's own edit control. Whether a provider is configured comes from the user layer of its settings namespace — the profile the Models page itself writes — so a catalogue entry nobody configured no longer contributes a card full of zero-priced rows.
 
 The settings namespace and the plugin's copy dictionary are named apart (`ui-billing` and `billing`). One identifier for both binds the scope to the dictionary, which reads as an unregistered namespace: every surface renders its unavailable state while the Host serves correct values.
 
@@ -54,7 +60,7 @@ The settings namespace and the plugin's copy dictionary are named apart (`ui-bil
 
 **Cost.** A rate row is a route, not an attempt: a turn whose attempts fall outside the loaded window is priced under the routes the durable accounting names, with the remainder at the last of them, so the split between two routes of one retried turn is approximate even though the total is not. Cache writes are charged as uncached input, which matches how the DeepSeek adapters report usage but not a provider that reports writes in their own bucket. Nothing reconciles the computed total against a provider invoice; the balance moving between two reads is the only external check.
 
-**Verification.** `packages/client/ui-billing/tests/cost.spec.ts` pins the folds and the money format; `tests/host.host.spec.ts` mounts the Host half over an in-memory settings provider and pins the namespace, the cached read, the failed-read path, and disposal; `tests/billing.client.spec.tsx` drives the three component surfaces and the plugin's registrations against the real `SlotRegistry`.
+**Verification.** `packages/client/ui-billing/tests/cost.spec.ts` pins the folds, the money format, and the route-discovery join; `tests/host.host.spec.ts` mounts the Host half over an in-memory settings provider and pins the namespace, the cached read, waiting for the credential store, the failed-read path, and disposal; `tests/billing.client.spec.tsx` drives the three component surfaces and the plugin's registrations against the real `SlotRegistry`; `packages/client/ui-chat/tests/turn-tail-row.client.spec.tsx` pins both shapes of the completed-turn row, and `tests/chat-stats.client.spec.tsx` pins the trailing hole's divider and layout.
 
 ## Related
 
