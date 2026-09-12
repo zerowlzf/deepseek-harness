@@ -256,21 +256,24 @@ describe('turn splits', () => {
       { route: 'a/m', window: 'peak', buckets: turnBuckets(1_000_000, 1_000_000) },
       { route: 'x/m', window: 'peak', buckets: turnBuckets(5, 5) },
       { route: 'a/m', window: 'offPeak', buckets: turnBuckets(1_000_000, 0) },
+      { route: 'x/m', window: 'offPeak', buckets: turnBuckets(5, 5) },
     ]
     const cost = turnCost(rows, { 'a/m': BANDED })
     expect(cost.total).toBeCloseTo(4.5 + 13.5 + 2.25, 10)
+    // One route in two windows is one priced route and one unpriced route, each
+    // named once however many rows it billed.
     expect(cost.priced).toEqual(['a/m'])
     expect(cost.unpriced).toEqual(['x/m'])
   })
 
-  it('prefers durable route attribution over the loaded attempts', () => {
+  it('names the routes a turn billed as its own accounting declares them', () => {
     expect(turnRoutes({
       uncachedInputTokens: 1, outputTokens: 1, totalTokens: 2,
       routes: [{ provider: 'a', model: 'm' }],
-    }, ['b/n'])).toEqual(['a/m'])
-    expect(turnRoutes({
-      uncachedInputTokens: 1, outputTokens: 1, totalTokens: 2,
-    }, ['b/n', 'b/n', 'c/o'])).toEqual(['b/n', 'c/o'])
+    })).toEqual(['a/m'])
+    // A turn-tail that recorded no route at all names none, which is what the
+    // dialog states instead of inventing an attribution.
+    expect(turnRoutes({ uncachedInputTokens: 1, outputTokens: 1, totalTokens: 2 })).toEqual([])
   })
 })
 
@@ -319,6 +322,7 @@ describe('balance failure copy', () => {
   })
 
   it('states each published-price reason in the surface language', () => {
+    expect(priceFailureText({ kind: 'noWeb' }, t)).toBe('官方价格读取失败：此部署没有挂载网页读取能力')
     expect(priceFailureText({ kind: 'http', status: 502 }, t)).toBe('官方价格读取失败：HTTP 502')
     expect(priceFailureText({ kind: 'network', detail: '' }, t)).toBe('官方价格读取失败：请求未能完成')
     expect(priceFailureText({ kind: 'payload', detail: 'no price table on the page' }, t))
@@ -361,6 +365,9 @@ describe('provider route discovery', () => {
     expect(modelIdsOf({ models: [{ id: 'a' }, { id: 'b' }, { id: 'a' }, { name: 'no id' }] })).toEqual(['a', 'b'])
     expect(modelIdsOf({ models: 'none' })).toEqual([])
     expect(modelIdsOf(null)).toEqual([])
+    // An entry that is not a profile object declares no model, so it is skipped
+    // rather than read as one.
+    expect(modelIdsOf({ models: [null, 'glm-5.3-flash', { id: 'a' }] })).toEqual(['a'])
   })
 
   it('walks a settings path', () => {

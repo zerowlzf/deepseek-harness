@@ -174,6 +174,7 @@ These limits define the current cost display. They are current package constrain
 - The price-table fixture is the table the live documentation pages served, recorded verbatim, so `parsePricePage` is specified against the row spans, footnote markers, and unit suffixes it will actually meet. The Chinese edition is the default because it states its figures in the package's default currency; the English one is in the spec as the refused-currency case.
 - `BillingTranslate` stays declared locally while the props derive from `PropsLocale`: the framework's seat over a merged `LocaleNamespaceMap` accepts this dictionary's keys plus the shared common ones, which is assignable to the narrower local alias but not the reverse. The two-faces-in-one-package layout compiles `src/settings.ts` in both leaves — the Client leaf lists it in `include` — because a Client config may not enter a split project's Host leaf.
 - The settings namespace (`ui-billing`) and the copy dictionary (`billing`) stay separately named: one identifier for both binds the scope to the dictionary, so every surface renders its unavailable state while the Host serves correct values.
+- The package is inside the per-file 100% coverage gate, and one arm carries a `/* v8 ignore */`: the turn fold's last-row guard, whose row every attempt above added, with a turn that has no attempt returning before it.
 
 </details>
 

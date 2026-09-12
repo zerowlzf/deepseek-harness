@@ -174,6 +174,7 @@ These limits define the current cost display. They are current package constrain
 - 价格表夹具就是线上文档页实际提供的那张表格，逐字录下，因此 `parsePricePage` 是针对它真正会遇到的行合并、脚注标记与单位后缀来规定的。默认用中文版，因为它陈述的币种就是本包默认币种；英文版在样张里充当「币种不符被拒」的用例。
 - `BillingTranslate` 保持本地声明，而 props 从 `PropsLocale` 派生：框架在合并后的 `LocaleNamespaceMap` 上给出的座位同时接受本字典的键与共享的通用键，它可以赋给更窄的本地别名，反向则不行。一包两 face 的布局让 `src/settings.ts` 在两个 leaf 中都参与编译——Client leaf 把它列进 `include`——因为 Client 配置不允许进入 split 项目的 Host leaf。
 - settings 命名空间（`ui-billing`）与文案字典（`billing`）分开命名：两者共用一个标识符会把 scope 绑到字典上，于是 Host 明明在提供正确取值，而每个界面都渲染自己的「不可用」状态。
+- 本包处在逐文件 100% 覆盖率门内，只有一条分支带 `/* v8 ignore */`：轮次折叠里「最后一行存在」的判空——上面的循环为每条尝试都加了一行，而没有尝试的轮次在到达该处之前就已返回。
 
 </details>
 

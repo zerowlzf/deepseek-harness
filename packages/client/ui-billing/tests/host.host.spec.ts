@@ -347,6 +347,31 @@ describe('namespace ownership', () => {
     expect(warn.mock.calls[0]?.[0]).toBe('ui-billing: settings write failed')
     expect(readOnly.persisted).toEqual([])
   })
+
+  it('falls back on the process environment for a reference the store holds no value for', async () => {
+    vi.stubEnv('BILLING_TEST_KEY', 'env-key')
+    const { fetchImpl } = await mount({ apiKeyEnv: 'BILLING_TEST_KEY' })
+    await vi.waitFor(() => { expect(fetchImpl).toHaveBeenCalled() })
+    expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).headers)
+      .toMatchObject({ authorization: 'Bearer env-key' })
+  })
+
+  it('drops each read that settles after disposal', async () => {
+    // Both chains are left holding an unanswered read, so disposal is what the
+    // settlement meets; neither may write a value into a stopped plugin.
+    const balance = Promise.withResolvers<Response>()
+    const page = Promise.withResolvers<WebFetchResult>()
+    const { settings, fiber } = await mount({}, {
+      balance: () => balance.promise,
+      prices: () => page.promise,
+    })
+    await fiber.dispose()
+    balance.resolve(Response.json(BALANCE_BODY))
+    page.resolve(pageOf())
+    await new Promise((resolve) => { setTimeout(resolve, 5) })
+    expect(settings.persisted).toEqual([])
+    expect(settings.doc[NS]).toBeUndefined()
+  })
 })
 
 describe('readBalance', () => {
@@ -397,8 +422,11 @@ describe('readBalance', () => {
       ['"scalar"', 'not an object'],
       ['{}', 'no balance_infos array'],
       ['{"balance_infos":[]}', 'no usable amount'],
+      ['{"balance_infos":[null]}', 'no usable amount'],
+      ['{"balance_infos":["x"]}', 'no usable amount'],
       ['{"balance_infos":[{"currency":"CNY"}]}', 'no usable amount'],
       ['{"balance_infos":[{"currency":"","total_balance":"1"}]}', 'no usable amount'],
+      ['{"balance_infos":[{"currency":"CNY","total_balance":"abc"}]}', 'no usable amount'],
     ] as const) {
       vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(body, { status: 200 }))))
       const result = await readBalance(request, fromEnv)
@@ -416,10 +444,12 @@ describe('readBalance', () => {
     expect(result.ok ? undefined : result.failure).toEqual({ kind: 'network', detail: 'socket closed' })
   })
 
-  it('reports a non-Error rejection verbatim', async () => {
+  it('reports a thrown value that is not an Error as its own text', async () => {
     vi.stubEnv('BILLING_TEST_KEY', 'k')
-    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('boom'))))
+    // A transport can fail with anything at all; the read states what it was
+    // given rather than claiming a cause it cannot name.
+    vi.stubGlobal('fetch', vi.fn(() => { throw 'closed' }))
     const result = await readBalance(request, fromEnv)
-    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'network', detail: 'boom' })
+    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'network', detail: 'closed' })
   })
 })

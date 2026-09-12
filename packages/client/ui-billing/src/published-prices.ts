@@ -161,6 +161,32 @@ export function parsePricePage(html: string): PublishedPrices | undefined {
   return undefined
 }
 
+/** One labeled fact a row carries: the value a cell states and the column it sits in. */
+interface Labelled<T> {
+  readonly value: T
+  readonly at: number
+}
+
+/**
+ * The first label at or after `from` that one reader recognizes.
+ * @param cells - one row's cell texts.
+ * @param read - reads one cell as the label being looked for.
+ * @param from - first column to consider.
+ * @returns the label with its column, or undefined when no cell states one.
+ */
+function labelledAt<T>(
+  cells: readonly string[],
+  read: (cell: string) => T | undefined,
+  from: number,
+): Labelled<T> | undefined {
+  for (const [at, cell] of cells.entries()) {
+    if (at < from) continue
+    const value = read(cell)
+    if (value !== undefined) return { value, at }
+  }
+  return undefined
+}
+
 /**
  * Read one table's rows into published rates.
  *
@@ -175,19 +201,19 @@ function parsePriceTable(rows: readonly string[][]): PublishedPrices | undefined
   const collected = new Map<string, Figure>()
   let bucket: Bucket | undefined
   for (const cells of rows) {
-    const bucketAt = cells.findIndex(cell => bucketOf(cell) !== undefined)
-    if (bucketAt >= 0) bucket = bucketOf(cells[bucketAt] ?? '')
-    const windowAt = findWindow(cells, bucketAt >= 0 ? bucketAt + 1 : 0)
-    if (windowAt < 0 || bucket === undefined) continue
-    const window = windowOf(cells[windowAt] ?? '')
-    if (window === undefined) continue
-    const values = cells.slice(windowAt + 1)
+    const opened = labelledAt(cells, bucketOf, 0)
+    if (opened !== undefined) bucket = opened.value
+    const labelled = labelledAt(cells, windowOf, opened === undefined ? 0 : opened.at + 1)
+    // A window label on its own states no bucket, and a row that states no
+    // window is not a price row of this table.
+    if (labelled === undefined || bucket === undefined) continue
+    const values = cells.slice(labelled.at + 1)
     if (values.length !== models.length) continue
     values.forEach((text, index) => {
       const figure = figureOf(text)
       const model = models[index]
       if (figure === undefined || model === undefined) return
-      collected.set(`${model}\u0000${window}\u0000${bucket}`, figure)
+      collected.set(`${model}\u0000${labelled.value}\u0000${bucket}`, figure)
     })
   }
 
@@ -203,14 +229,6 @@ function parsePriceTable(rows: readonly string[][]): PublishedPrices | undefined
     rates[model] = { ...peak, offPeak }
   }
   return Object.keys(rates).length === 0 ? undefined : { models: rates, currency }
-}
-
-/** Index of the first cell at or after `from` that labels a price window, or -1. */
-function findWindow(cells: readonly string[], from: number): number {
-  for (let index = from; index < cells.length; index++) {
-    if (windowOf(cells[index] ?? '') !== undefined) return index
-  }
-  return -1
 }
 
 /** One model's complete band for one window, or undefined when any bucket is missing. */
