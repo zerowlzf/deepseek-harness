@@ -220,6 +220,7 @@ export function turnRouteUsage(
   const remainder = subtractBuckets(turnBuckets(usage), summed)
   if (!isEmptyTurnBuckets(remainder)) {
     const last = rows[rows.length - 1]
+    /* v8 ignore next -- every attempt above added a row, and a turn with none returned before this point. */
     if (last !== undefined) {
       rows[rows.length - 1] = { ...last, buckets: addBuckets(last.buckets, remainder) }
     }
@@ -301,14 +302,10 @@ export function turnCost(rows: readonly TurnRouteUsage[], rates: RateTable): Tur
 }
 
 /**
- * Routes a turn billed, preferring the durable attribution and falling back to
- * the loaded attempts when the turn-tail accounting withheld it.
+ * Routes a turn billed, as its own durable accounting names them.
  * @param usage - the turn's exact accounting.
- * @param attempts - routes read from the loaded attempts.
- * @returns distinct route keys in first-seen order.
+ * @returns route keys in the order the log declared them.
  */
-export function turnRoutes(usage: TurnTokenUsage, attempts: readonly string[]): string[] {
-  const declared = usage.routes?.map(route => routeKey(route.provider, route.model)) ?? []
-  if (declared.length > 0) return declared
-  return [...new Set(attempts)]
+export function turnRoutes(usage: TurnTokenUsage): string[] {
+  return usage.routes?.map(route => routeKey(route.provider, route.model)) ?? []
 }

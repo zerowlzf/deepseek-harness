@@ -100,7 +100,7 @@ function rowCost(row: TurnRouteUsage, rates: NonNullable<BillingSettings['models
 /** One route's rates for the window it was charged in, for the dialog's footnote. */
 function rateText(row: TurnRouteUsage, rate: ModelRate | undefined, t: TurnCostMeterProps['t']): string {
   if (rate === undefined) return `${row.route}: ${t('pill.dialog.unpriced')}`
-  const band = row.window === 'offPeak' ? rate.offPeak ?? rate : rate
+  const band = row.window === 'offPeak' && rate.offPeak !== undefined ? rate.offPeak : rate
   const figures = [band.cacheHit, band.cacheMiss, band.output].map(value => String(value)).join(' / ')
   return pricesByWindow(rate)
     ? `${row.route} · ${t(windowKey(row.window))}: ${figures}`
@@ -145,7 +145,7 @@ export function TurnCostMeter({ turn: location, useChat, useBilling, t }: TurnCo
   // longer loaded cannot be split: the figure is withheld and the dialog names
   // the routes it could not attribute. It is the only reason for a priced row
   // to be absent, so the routes are read only then.
-  const named = rows.length === 0 ? turnRoutes(usage, attempts.map(attempt => attempt.route)) : []
+  const named = rows.length === 0 ? turnRoutes(usage) : []
   const currency = currencyOf(settings?.cache ?? null, settings?.currency ?? DEFAULT_CURRENCY)
   const priced = cost.priced.length > 0
   const label = priced
