@@ -58,11 +58,23 @@ export function apply(ctx: Context): void {
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
     },
     async execute(args, exec) {
+      // `type: 'json'` projects without a wire type, and some providers then
+      // serialize the nested argument as a JSON string before validation.
+      // Re-parse at this boundary; a malformed string falls through to the
+      // provider's own schema error unchanged.
+      let input = args.input
+      if (typeof input === 'string') {
+        try {
+          input = JSON.parse(input) as typeof input
+        } catch {
+          /* fall through to provider validation */
+        }
+      }
       const data = await ctx.cordisInspect.query(
         args.platform,
         args.provider,
         args.method,
-        args.input,
+        input,
         requireAgent(exec),
         exec.signal,
       )
