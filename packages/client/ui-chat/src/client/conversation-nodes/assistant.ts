@@ -206,8 +206,9 @@ function finalNode(
       usage: event.data.usage,
       // The route that billed this attempt, carried by the same durable message
       // the rest of this node comes from. A consumer that prices attempts reads
-      // it to attribute each one; the Chat renderers themselves do not.
-      provenance: {
+      // it to attribute each one; the Chat renderers themselves do not. 0.1.6
+      // declares this member natively as `providerMetadata`.
+      providerMetadata: {
         provider: event.data.message.source.provider,
         model: event.data.message.source.model,
       },

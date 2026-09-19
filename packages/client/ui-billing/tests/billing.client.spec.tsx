@@ -138,7 +138,10 @@ function seats() {
     useChat: (() => undefined) as never,
     useTrajectory: (() => undefined) as never,
     useSessions: (() => [] as never) as never,
-    useSessionPendingInteraction: (() => undefined) as never,
+    // 0.1.6 folds the old `useSessionPendingInteraction` standard prop into the
+    // unified Session status snapshot and adds the retain-info hook beside it.
+    useSessionStatus: (() => new Map() as never) as never,
+    useSessionRetainInfo: (() => undefined) as never,
     useWorkspaces: (() => undefined) as never,
     usePanelInfo: (() => undefined) as never,
     useResource: (() => undefined) as never,
@@ -517,7 +520,7 @@ describe('turn cost row', () => {
         finalNode: {
           usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
           time: AT,
-          provenance: { provider: 'bai', model: 'glm-5.3-flash' },
+          providerMetadata: { provider: 'bai', model: 'glm-5.3-flash' },
         },
       },
     },
@@ -531,7 +534,7 @@ describe('turn cost row', () => {
         finalNode: {
           usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
           time: AT,
-          provenance: { provider: 'x', model: 'other' },
+          providerMetadata: { provider: 'x', model: 'other' },
         },
       },
     },
@@ -558,7 +561,7 @@ describe('turn cost row', () => {
         finalNode: {
           usage: { inputTokens: 1_000_000, outputTokens: 0 },
           time: AT,
-          provenance: { provider: 'x', model: 'other' },
+          providerMetadata: { provider: 'x', model: 'other' },
         },
       },
     },
@@ -628,7 +631,7 @@ describe('turn cost row', () => {
           turn: 1,
           finalNode: {
             usage: { inputTokens: 1_000, outputTokens: 1_000 },
-            provenance: { provider: 'bai', model: 'glm-5.3-flash' },
+            providerMetadata: { provider: 'bai', model: 'glm-5.3-flash' },
           },
         },
       },
@@ -765,13 +768,13 @@ describe('turn cost row', () => {
     // no charge to attribute, and a node of another turn is another turn's
     // evidence entirely.
     const incomplete = [
-      step(1, { time: AT, provenance: { provider: 'a', model: 'b' } }),
-      step(1, { usage: null, time: AT, provenance: { provider: 'a', model: 'b' } }),
-      step(1, { usage: {}, time: AT, provenance: {} }),
-      step(1, { usage: {}, time: AT, provenance: { provider: '' } }),
-      step(1, { usage: {}, time: AT, provenance: { provider: 'a' } }),
-      step(1, { usage: {}, time: AT, provenance: { provider: 'a', model: '' } }),
-      step(2, { usage: {}, time: AT, provenance: { provider: 'a', model: 'b' } }),
+      step(1, { time: AT, providerMetadata: { provider: 'a', model: 'b' } }),
+      step(1, { usage: null, time: AT, providerMetadata: { provider: 'a', model: 'b' } }),
+      step(1, { usage: {}, time: AT, providerMetadata: {} }),
+      step(1, { usage: {}, time: AT, providerMetadata: { provider: '' } }),
+      step(1, { usage: {}, time: AT, providerMetadata: { provider: 'a' } }),
+      step(1, { usage: {}, time: AT, providerMetadata: { provider: 'a', model: '' } }),
+      step(2, { usage: {}, time: AT, providerMetadata: { provider: 'a', model: 'b' } }),
     ]
     expect(attemptsOf(incomplete, 1)).toEqual([])
   })
@@ -793,7 +796,7 @@ describe('turn cost row', () => {
       step(1, {
         usage: { inputTokens: 1_000_000, outputTokens: 0 },
         time: offPeakAt,
-        provenance: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        providerMetadata: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       }),
     ]
     render(
@@ -845,7 +848,7 @@ describe('turn cost row', () => {
       step(1, {
         usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
         time: AT,
-        provenance: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        providerMetadata: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       }),
     ]
     render(

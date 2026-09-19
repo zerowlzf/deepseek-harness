@@ -192,7 +192,9 @@ describe('StatsPills', () => {
   it('renders a trailing contribution inside the row on the row gap', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsPills {...props(source, { tokenUsage: USAGE }, <b>7</b>)} />)
-    const row = view.container.querySelector('[data-composer-stats]')!
+    // 0.1.6 dropped the `data-composer-stats` marker with the composer footer
+    // redesign; the row is the component's root whenever it renders.
+    const row = view.container.firstElementChild as HTMLElement
     // The contribution is one of the row's own items beside the two pills: the
     // row's own text carries it, with no divider and no wrapper between them.
     expect(row.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%7')
@@ -201,7 +203,7 @@ describe('StatsPills', () => {
   it('leaves the row unchanged when the hole renders nothing', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })
     const view = render(<StatsPills {...props(source)} />)
-    const row = view.container.querySelector('[data-composer-stats]')!
+    const row = view.container.firstElementChild as HTMLElement
     expect(row.children).toHaveLength(2)
     expect(row.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%')
   })

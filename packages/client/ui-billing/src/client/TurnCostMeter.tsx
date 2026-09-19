@@ -65,15 +65,15 @@ export function attemptsOf(nodes: readonly ChatConversationViewNode[], turn: num
       readonly finalNode?: {
         readonly usage?: unknown
         readonly time?: unknown
-        readonly provenance?: { readonly provider?: unknown; readonly model?: unknown }
+        readonly providerMetadata?: { readonly provider?: unknown; readonly model?: unknown }
       }
     }
     if (data.turn !== turn) continue
     const finalNode = data.finalNode
     const usage = finalNode?.usage
     if (typeof usage !== 'object' || usage === null) continue
-    const provider = finalNode?.provenance?.provider
-    const model = finalNode?.provenance?.model
+    const provider = finalNode?.providerMetadata?.provider
+    const model = finalNode?.providerMetadata?.model
     if (typeof provider !== 'string' || provider.length === 0) continue
     if (typeof model !== 'string' || model.length === 0) continue
     const at = finalNode?.time

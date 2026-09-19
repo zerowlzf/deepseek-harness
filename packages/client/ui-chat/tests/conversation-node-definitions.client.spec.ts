@@ -1006,7 +1006,7 @@ describe('built-in conversation node Definitions', () => {
       }, { surfaceOp: 'append' }),
     ])
     const finalNode = (node(snapshot(routed), 'assistant-step')?.data as AssistantChatData).finalNode
-    expect(finalNode?.provenance).toEqual({ provider: 'fake', model: 'fake' })
+    expect(finalNode?.providerMetadata).toEqual({ provider: 'fake', model: 'fake' })
   })
 
   it('uses live Assistant deltas without replaying settled embedded streams', () => {

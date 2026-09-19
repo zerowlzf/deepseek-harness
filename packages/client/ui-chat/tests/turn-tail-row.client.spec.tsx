@@ -95,7 +95,10 @@ function renderTail(
         inspectCall: vi.fn(),
         useChat: fixture.useChat,
         useTurnData: (() => undefined) as never,
-        renderSlot: ((key: string, owner: unknown) => slot(key, owner)) as never,
+        renderSlot: ((key: string, owner: unknown) =>
+          // 0.1.6 renders the `turnTail` list through `renderSlot` (it is no
+          // longer a chain key), so the contribution stub rides that call.
+          key === 'conversation.chat.turnTail' ? chain(owner) : slot(key, owner)) as never,
         renderSlotChain: ((_key: string, owner: unknown) => chain(owner)) as never,
         t,
       } as unknown as React.ComponentProps<typeof TurnTailNodeView>)}

@@ -76,7 +76,10 @@ function seats() {
     useChat: (() => undefined) as never,
     useTrajectory: (() => undefined) as never,
     useSessions: (() => [] as never) as never,
-    useSessionPendingInteraction: (() => undefined) as never,
+    // 0.1.6 folds the old `useSessionPendingInteraction` standard prop into the
+    // unified Session status snapshot and adds the retain-info hook beside it.
+    useSessionStatus: (() => new Map() as never) as never,
+    useSessionRetainInfo: (() => undefined) as never,
     useWorkspaces: (() => undefined) as never,
     usePanelInfo: (() => undefined) as never,
     useResource: (() => undefined) as never,
