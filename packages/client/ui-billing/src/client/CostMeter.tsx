@@ -17,7 +17,7 @@ import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { BalanceSnapshot, PriceWindow } from '../settings.ts'
 import { DEFAULT_CURRENCY, pricesByWindow, routeKey } from '../settings.ts'
-import type { BillingInjected } from './face.ts'
+import type { BillingPillsInjected } from './face.ts'
 import { effectiveRates } from './official-rates.ts'
 import { LOCALE_NS } from './locales.ts'
 import {
@@ -36,7 +36,7 @@ import dialogCss from './stat-dialog.module.css'
  */
 export type SessionCostMeterProps =
   & PropsRuntime<'conversation.composer.dock'>
-  & InjectFace<BillingInjected>
+  & InjectFace<BillingPillsInjected>
   & PropsLocale<typeof LOCALE_NS>
 
 /**

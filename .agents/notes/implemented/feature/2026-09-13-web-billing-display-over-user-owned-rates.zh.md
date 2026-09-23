@@ -48,7 +48,9 @@ Web 图形界面报告了会话消耗了什么，却没有报告它花了多少�
 
 ### 注册
 
-三个界面，卸载时各自还原：`settings.section`（计费页）、`conversation.composer.dock`（本会话费用与余额两个数字）、以及 `conversation.chat.turnTail`（每轮费用胶囊）。
+三个界面，卸载时各自还原：`plugins.row.config`（计费配置页，键为 `@deepseek-ai/dsh-client-ui-billing#ui-billing`——本包在 Plugins 页上自己那一行的配置）、`conversation.composer.dock`（本会话费用与余额两个数字）、以及 `conversation.chat.turnTail`（每轮费用胶囊）。
+
+该页属于配置契约里的「自定义页」情形。Plugins 页拥有该行条目的 form 并交给页面，因此页面把编辑暂存、由一次保存通过 `form.mutate` 写出全部改动；单价本身仍由本包自绘控件承载——共享的标量字段套件按名字寻址某个段内字段（`path: [field]`），表达不了「一张以路由与价格时段为键的映射、每格一个字段」。页面在保存之外唯一还会写的是「立即读取」请求，它是命令而非字段：带时间戳写入以便 Host 区分先后，并由 Host 在该次读取结算时清掉。
 
 两个数字座位都是各自所属包**已经声明**的槽，因此本包不修改任何官方组件。composer 那两个数字加入 `conversation.composer.dock`——ui-conversation 渲染在 composer 卡片下方的环境 list，官方统计行只是其中**一个**条目；每轮费用胶囊加入 `conversation.chat.turnTail`，即 ui-chat 声明的、位于已完成轮次操作条**之前**的特性贡献 list。更早的一版是往内部伸手：声明官方统计行的一个尾部子节点，让两个数字吃那一行自己的 12px 间距，代价是要改 ui-chat 的 `StatsPills`；再早一版则把那一行复刻成第二个 dock 行，按官方行高度上提、再偏移到官方胶囊之后——那种做法只能去猜一组宽度随数字变化的居中内容会在哪里结束，猜错时就压字。两个洞现在都不需要了：dock 自己的 list 用「再多一个环境条目」表达同一份贡献，既不改组件，也不需要任何宽度算术。
 
