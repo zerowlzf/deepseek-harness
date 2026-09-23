@@ -24,6 +24,15 @@
       "path": "../../api/session-controller/tsconfig.client.json"
     },
     {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../llm/token-meter"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
       "path": "../locale/tsconfig.client.json"
     },
     {
@@ -36,6 +45,9 @@
       "path": "../ui-conversation/tsconfig.client.json"
     },
     {
+      "path": "../ui-plugin-manager/tsconfig.client.json"
+    },
+    {
       "path": "../ui-primitives"
     },
     {
@@ -46,15 +58,6 @@
     },
     {
       "path": "../ui-slots"
-    },
-    {
-      "path": "../../llm/llm"
-    },
-    {
-      "path": "../../llm/token-meter"
-    },
-    {
-      "path": "../../settings/settings"
     }
   ]
 }
