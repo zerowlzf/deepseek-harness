@@ -58,7 +58,7 @@ describe('durable V3 admission failures', () => {
     expect(() =>{  assertEvent(extension, 2) }).toThrow(/unclassified/)
   })
 
-  it('admits the inherited released permission/preset origin provenance member', () => {
+  it('admits the inherited released permission/preset origin member', () => {
     const selected = event('permission/preset', { preset: 'default', origin: 'selection' })
     expect(() =>{  assertEvent(selected, 2) }).not.toThrow()
     expect(() =>{  assertEvent({ ...selected, data: { preset: 'default', origin: 'custom' } }, 2) }).toThrow(/origin/)
