@@ -214,6 +214,11 @@
       "@deepseek-ai/dsh-client-ui-attachment": ["./packages/client/ui-attachment/src"],
       "@deepseek-ai/dsh-client-ui-primitives": ["./packages/client/ui-primitives/src"],
       "@deepseek-ai/dsh-client-ui-dockkit": ["./packages/client/ui-dockkit/src"],
+      // ui-billing's npm name carries the client- group prefix its directory does
+      // not, so the name is not `${PREFIX}${directory}` and the generated aliases
+      // cannot map it. Only the bare specifier is written here: the
+      // `dsh-client-*/client` wildcard above already covers the browser subpath.
+      "@deepseek-ai/dsh-client-ui-billing": ["./packages/client/ui-billing/src"],
       "@deepseek-ai/dsh-client-ui-sidebar-right": ["./packages/client/ui-sidebar-right/src"],
       "@deepseek-ai/dsh-client-ui-sidebar-right/client": ["./packages/client/ui-sidebar-right/src/client"],
       "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": ["./packages/client/ui-sidebar-documentpreview/src"],
