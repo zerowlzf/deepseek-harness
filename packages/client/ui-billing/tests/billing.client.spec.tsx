@@ -14,7 +14,6 @@ import { act, useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import {
   makeTranslate, stubConfigForm, TestRemote, type StubConfigForm,
@@ -26,8 +25,8 @@ import { DEFAULT_CURRENCY, NS, type BillingSettings } from '../src/settings.ts'
 import { providerRoutes, type ProviderRouteGroup } from '../src/client/routes.ts'
 import { SessionCostMeter, currencyOf, freshness, groupSteps } from '../src/client/CostMeter.tsx'
 import { TurnCostMeter, attemptsOf } from '../src/client/TurnCostMeter.tsx'
-import { BillingSection } from '../src/client/SettingsSection.tsx'
-import type { BillingInjected } from '../src/client/face.ts'
+import { BillingPage, type BillingPageProps } from '../src/client/BillingPage.tsx'
+import type { BillingPageInjected, BillingPillsInjected } from '../src/client/face.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { rateOps } from '../src/client/rate-ops.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -89,9 +88,6 @@ function billingFace(stub: StubConfigForm<BillingSettings>, ctx?: Context) {
       useSyncExternalStore(subscribe, () => selector(stub.scope.getSnapshot()))) as never,
     useBillingGroups: ((selector: (value: readonly ProviderRouteGroup[]) => unknown) =>
       useSyncExternalStore(subscribeGroups, () => selector(groups.getSnapshot()))) as never,
-    saveRate: vi.fn(async () => {}),
-    clearRate: vi.fn(async () => {}),
-    refreshPrices: vi.fn(async () => {}),
     routeGroups: async () => {
       if (ctx === undefined) return
       const describe = (ctx as unknown as {
@@ -119,6 +115,42 @@ function billingFace(stub: StubConfigForm<BillingSettings>, ctx?: Context) {
   }
 }
 
+
+/**
+ * Render the configuration page the way the Plugins page does.
+ *
+ * The owner re-renders a page when its entry's form changes, so the harness
+ * subscribes to the same stub the spec publishes through, and hands the page
+ * the form of the entry the row names. `mutate` is the spy a save is asserted
+ * against; it answers acceptance, which is what re-seeds the page's drafts.
+ * @param stub - the entry form stub the spec publishes through.
+ * @param face - the plugin's injected face for this spec.
+ * @returns the write spy, so a spec can assert what a save sent.
+ */
+function renderPage(
+  stub: StubConfigForm<BillingSettings>,
+  face: ReturnType<typeof billingFace>,
+): { mutate: ReturnType<typeof vi.fn> } {
+  const mutate = vi.fn(async () => true) as unknown as ReturnType<typeof vi.fn>
+  function Harness() {
+    const state = useSyncExternalStore(
+      (notify: () => void) => stub.scope.subscribe(notify),
+      () => stub.scope.getSnapshot(),
+    ) as unknown as ConfigFormSnapshot<Record<string, unknown>>
+    return (
+      <BillingPage
+        {...seats()}
+        view="page"
+        form={{ state, mutate: mutate as unknown as NonNullable<BillingPageProps['form']>['mutate'] }}
+        useBillingGroups={face.useBillingGroups}
+        routeGroups={face.routeGroups}
+        t={t}
+      />
+    )
+  }
+  render(<Harness />)
+  return { mutate }
+}
 
 /**
  * The framework seats the renderer supplies to a slot entry. These specs drive
@@ -925,7 +957,7 @@ describe('settings page', () => {
       user: { providers: { bai: { apiKeyEnv: 'BAI_API_KEY', models: [{ id: 'glm-5.3-flash' }, { id: 'qwen3.8-flash' }] } } },
     }))
     const face1 = billingFace(stub, ctx)
-    render(<BillingSection {...seats()} {...face1} t={t} />)
+    renderPage(stub, face1)
 
     await waitFor(() => { expect(screen.queryByText('BAI')).not.toBeNull() })
     expect(screen.getByText('DeepSeek account balance')).toBeDefined()
@@ -956,7 +988,7 @@ describe('settings page', () => {
       },
     }))
     const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
 
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
@@ -988,7 +1020,7 @@ describe('settings page', () => {
       },
     }))
     const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
 
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
@@ -1051,7 +1083,7 @@ describe('settings page', () => {
       }),
     }
     const face = billingFace(stub, contextDouble(remote, directory))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    const { mutate } = renderPage(stub, face)
 
     await screen.findByText('DeepSeek')
     expect(screen.getByText('1 priced')).toBeDefined()
@@ -1075,10 +1107,12 @@ describe('settings page', () => {
     fireEvent.change(offPeak, { target: { value: '0.03' } })
     fireEvent.click(screen.getByText('Save'))
     await act(async () => { await Promise.resolve() })
-    expect(face.saveRate).toHaveBeenCalledWith(
-      'deepseek-official/deepseek-v4-flash',
-      { cacheHit: '', cacheMiss: '', output: '' },
-      { cacheHit: '0.03', cacheMiss: '', output: '' },
+    // The page hands the entry's form the operation the row describes: the
+    // typed off-peak figure at its own path, and nothing for the fields the
+    // user left alone.
+    expect(mutate).toHaveBeenCalledWith(
+      [{ op: 'set', path: ['models', 'deepseek-official/deepseek-v4-flash', 'offPeak', 'cacheHit'], value: 0.03 }],
+      1,
     )
   })
 
@@ -1096,7 +1130,7 @@ describe('settings page', () => {
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
 
     const card = document.querySelector('[data-billing-official-card]')
     expect(card?.textContent).toContain('Not read')
@@ -1127,7 +1161,7 @@ describe('settings page', () => {
     stub.publish(snapshot())
     const ctx = contextDouble(remoteDouble(), baiDirectory())
     const face2 = billingFace(stub, ctx)
-    render(<BillingSection {...seats()} {...face2} t={t} />)
+    const { mutate } = renderPage(stub, face2)
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
 
@@ -1140,12 +1174,14 @@ describe('settings page', () => {
     // The page hands the plugin both bands as typed; the plugin owns how they
     // become settings writes. This provider bills one figure at every hour, so
     // it offers no off-peak fields and hands over an empty band.
-    expect(face2.saveRate).toHaveBeenCalledWith(
-      'bai/glm-5.3-flash',
-      { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' },
-      { cacheHit: '', cacheMiss: '', output: '' },
+    expect(mutate).toHaveBeenCalledWith(
+      [
+        { op: 'set', path: ['models', 'bai/glm-5.3-flash', 'cacheHit'], value: 0.15 },
+        { op: 'set', path: ['models', 'bai/glm-5.3-flash', 'cacheMiss'], value: 4.5 },
+        { op: 'set', path: ['models', 'bai/glm-5.3-flash', 'output'], value: 13.5 },
+      ],
+      1,
     )
-    expect(screen.getByText('Saved')).toBeDefined()
   })
 
   it('clears a stored row and reports a refused write', async () => {
@@ -1158,17 +1194,22 @@ describe('settings page', () => {
       user: { providers: { bai: {} } },
     }))
     const face3 = billingFace(stub, ctx)
-    render(<BillingSection {...seats()} {...face3} t={t} />)
+    const { mutate } = renderPage(stub, face3)
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
+    // Clear stages the row's removal; the page's own save is what writes it, as
+    // one unset of the whole stored row.
     fireEvent.click(screen.getByText('Clear'))
-    await act(async () => { await Promise.resolve() })
-    expect(face3.clearRate).toHaveBeenCalledWith('bai/glm-5.3-flash')
-
-    face3.saveRate.mockRejectedValueOnce(new Error('read-only'))
     fireEvent.click(screen.getByText('Save'))
     await act(async () => { await Promise.resolve() })
-    expect(screen.getByText('Save failed: read-only')).toBeDefined()
+    expect(mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['models', 'bai/glm-5.3-flash'] }], 1)
+
+    // A save the Host refuses says so and keeps the drafts, so the user can try again.
+    mutate.mockResolvedValueOnce(false)
+    fireEvent.click(screen.getByText('Clear'))
+    fireEvent.click(screen.getByText('Save'))
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('The save was not accepted; try again.')).toBeDefined()
   })
 
   it('adds a route by hand and validates its form', async () => {
@@ -1176,7 +1217,7 @@ describe('settings page', () => {
     stub.publish(snapshot())
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face4 = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face4} t={t} />)
+    renderPage(stub, face4)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
 
     // The page's own entry point opens the provider it names, so a route no
@@ -1224,7 +1265,7 @@ describe('settings page', () => {
       },
     }
     const face5 = billingFace(stub, contextDouble(remote, directory))
-    render(<BillingSection {...seats()} {...face5} t={t} />)
+    renderPage(stub, face5)
     expect(await screen.findByText('BAI')).toBeDefined()
     // The configured-but-modelless provider keeps its card as the seat for a
     // hand-added route; an unconfigured catalogue row adds none.
@@ -1240,7 +1281,7 @@ describe('settings page', () => {
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face6 = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face6} t={t} />)
+    renderPage(stub, face6)
     await screen.findByText('This deployment stores settings read-only, so rates cannot be saved.')
     expect(screen.getByText('Balance read failed: HTTP 401')).toBeDefined()
     // Neither card has a figure to show: the balance and the published table
@@ -1256,7 +1297,7 @@ describe('settings page', () => {
     const remote = new TestRemote(ctx, remoteDouble())
     ctx.provide('configForms', { describe: () => describeFace } as never)
     const face7 = billingFace(stub, ctx)
-    render(<BillingSection {...seats()} {...face7} t={t} />)
+    renderPage(stub, face7)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
     // Both invalidation channels the page follows converge on the same reload.
     await act(async () => { remote.emit('llm/adapters-updated', []) })
@@ -1270,7 +1311,7 @@ describe('settings page', () => {
     const stub = stubConfigForm<BillingSettings>()
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
     expect(screen.getAllByText('Not read')).toHaveLength(2)
     expect(screen.getByText('CNY')).toBeDefined()
@@ -1287,7 +1328,7 @@ describe('settings page', () => {
       },
     }))
     const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
     expect(screen.getByLabelText<HTMLInputElement>('bai/glm-5.3-flash Cache hit').value).toBe('0')
@@ -1314,7 +1355,7 @@ describe('settings page', () => {
     }
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remote, describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
     expect(screen.queryByText('Catalogue')).toBeNull()
   })
@@ -1323,7 +1364,7 @@ describe('settings page', () => {
     const stub = stubConfigForm<BillingSettings>()
     stub.publish(snapshot())
     const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     await screen.findByText('BAI')
 
     // The provider already has a card, so the typed route joins it rather than
@@ -1340,7 +1381,7 @@ describe('settings page', () => {
     stub.publish(snapshot())
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     await screen.findByText('No configured provider was found. Add a provider and its models on the Models page first.')
 
     const field = screen.getByLabelText('Add a route manually')
@@ -1380,7 +1421,7 @@ describe('settings page', () => {
       },
     }
     const face = billingFace(stub, contextDouble(remote, directory))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     await screen.findByText('X')
     fireEvent.click(screen.getByLabelText('Edit rates for x'))
     expect(screen.getByText('This provider has no model to price; add a route below.')).toBeDefined()
@@ -1408,14 +1449,16 @@ describe('settings page', () => {
       value: { currency: 'CNY', models: { 'bai/glm-5.3-flash': FLASH_RATES }, cache: null, cacheError: null },
     }))
     const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    const { mutate } = renderPage(stub, face)
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
+    // A save writes what was staged, so one field is staged before the refusal.
+    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash Cache hit'), { target: { value: '0.2' } })
 
-    face.saveRate.mockRejectedValueOnce('read-only')
+    mutate.mockResolvedValueOnce(false)
     fireEvent.click(screen.getByText('Save'))
     await act(async () => { await Promise.resolve() })
-    expect(screen.getByText('Save failed: read-only')).toBeDefined()
+    expect(screen.getByText('The save was not accepted; try again.')).toBeDefined()
   })
 
   it('reports a refused clear, whatever the refusal was', async () => {
@@ -1432,19 +1475,28 @@ describe('settings page', () => {
       value: { providers: { bai: { models: [{ id: 'glm-5.3-flash' }, { id: 'qwen3.8-flash' }] } } },
       user: { providers: { bai: { apiKeyEnv: 'BAI_API_KEY', models: [{ id: 'glm-5.3-flash' }, { id: 'qwen3.8-flash' }] } } },
     })))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    const { mutate } = renderPage(stub, face)
     await screen.findByText('BAI')
     fireEvent.click(screen.getByLabelText('Edit rates for bai'))
 
-    face.clearRate.mockRejectedValueOnce(new Error('read-only'))
+    // Clearing two rows stages two removals, and the one save writes both.
     fireEvent.click(screen.getAllByText('Clear')[0] as HTMLElement)
-    await act(async () => { await Promise.resolve() })
-    expect(screen.getByText('Save failed: read-only')).toBeDefined()
-
-    face.clearRate.mockRejectedValueOnce('locked')
     fireEvent.click(screen.getAllByText('Clear')[1] as HTMLElement)
+    fireEvent.click(screen.getByText('Save'))
     await act(async () => { await Promise.resolve() })
-    expect(screen.getByText('Save failed: locked')).toBeDefined()
+    const [ops] = mutate.mock.calls.at(-1) as [{ op: string; path: readonly string[] }[]]
+    expect(ops).toHaveLength(2)
+    for (const op of ops) {
+      expect(op.op).toBe('unset')
+      expect(op.path[0]).toBe('models')
+      expect(op.path).toHaveLength(2)
+    }
+
+    mutate.mockResolvedValueOnce(false)
+    fireEvent.click(screen.getAllByText('Clear')[0] as HTMLElement)
+    fireEvent.click(screen.getByText('Save'))
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('The save was not accepted; try again.')).toBeDefined()
   })
 
   it('marks an unavailable balance on its card', async () => {
@@ -1459,7 +1511,7 @@ describe('settings page', () => {
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     await screen.findByText('Insufficient balance')
   })
 
@@ -1480,7 +1532,7 @@ describe('settings page', () => {
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     expect(await screen.findByText('Read 1 min ago')).toBeDefined()
     expect(screen.getByText('Read 2 h ago')).toBeDefined()
 
@@ -1506,11 +1558,11 @@ describe('settings page', () => {
     stub.publish(snapshot({ value: { official: stored } }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    const { mutate } = renderPage(stub, face)
 
     fireEvent.click(await screen.findByText('Read now'))
     await act(async () => { await Promise.resolve() })
-    expect(face.refreshPrices).toHaveBeenCalledTimes(1)
+    expect(mutate).toHaveBeenCalledTimes(1)
 
     // The request reads as in flight until the Host clears it with that read's
     // own settlement, so the control states that instead of inviting a second.
@@ -1536,19 +1588,19 @@ describe('settings page', () => {
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    const { mutate } = renderPage(stub, face)
 
     // A deployment that refuses the write refuses the request with it, and the
     // page states the refusal however the transport phrased it.
-    face.refreshPrices.mockRejectedValueOnce(new Error('read-only'))
+    mutate.mockRejectedValueOnce(new Error('read-only'))
     fireEvent.click(await screen.findByText('Read now'))
     await act(async () => { await Promise.resolve() })
-    expect(screen.getByText('Save failed: read-only')).toBeDefined()
+    expect(screen.getByText('The save was not accepted; try again.')).toBeDefined()
 
-    face.refreshPrices.mockRejectedValueOnce('locked')
+    mutate.mockRejectedValueOnce('locked')
     fireEvent.click(screen.getByText('Read now'))
     await act(async () => { await Promise.resolve() })
-    expect(screen.getByText('Save failed: locked')).toBeDefined()
+    expect(screen.getByText('The save was not accepted; try again.')).toBeDefined()
   })
 
   it('shows a recorded source that is not a URL as it was recorded', async () => {
@@ -1565,7 +1617,7 @@ describe('settings page', () => {
     }))
     const describeFace = { ensure: () => Promise.resolve(), getSnapshot: () => ({ view: { namespaces: [] } }) }
     const face = billingFace(stub, contextDouble(remoteDouble(), describeFace))
-    render(<BillingSection {...seats()} {...face} t={t} />)
+    renderPage(stub, face)
     expect(await screen.findByText('Source docs/pricing')).toBeDefined()
   })
 })
@@ -1604,7 +1656,7 @@ describe('plugin registration', () => {
     ctx.slots.register({
       name: 'root',
       children: {
-        'settings.section': { kind: 'list', scope: 'root' },
+        'plugins.row.config': { kind: 'keyed', scope: 'root' },
         'conversation.composer.dock': { kind: 'list', scope: 'session' },
         'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
       },
@@ -1615,23 +1667,33 @@ describe('plugin registration', () => {
     return { ctx, scope, remote, fiber }
   }
 
-  /** The business face the settings page registration injected, as the renderer resolves it. */
-  function faceOf(ctx: Context): BillingInjected {
-    const entry = ctx.slots.entries('settings.section')[0] as { inject?: () => BillingInjected } | undefined
-    if (entry?.inject === undefined) throw new Error('the settings page is not registered')
+  /** The face the configuration page registration injected, as the renderer resolves it. */
+  function faceOf(ctx: Context): BillingPageInjected {
+    const entry = ctx.slots.entries('plugins.row.config')[0] as { inject?: () => BillingPageInjected } | undefined
+    if (entry?.inject === undefined) throw new Error('the configuration page is not registered')
+    return entry.inject()
+  }
+
+  /** The face the composer figures' registration injected, as the renderer resolves it. */
+  function pillFaceOf(ctx: Context): BillingPillsInjected {
+    const entry = ctx.slots.entries('conversation.composer.dock')[0] as { inject?: () => BillingPillsInjected } | undefined
+    if (entry?.inject === undefined) throw new Error('the composer figures are not registered')
     return entry.inject()
   }
 
   it('registers all three surfaces and fiber disposal removes them', async () => {
     const { ctx, fiber } = await mountPlugin()
-    expect(ctx.slots.entries('settings.section')).toHaveLength(1)
+    expect(ctx.slots.entries('plugins.row.config')).toHaveLength(1)
     expect(ctx.slots.entries('conversation.composer.dock')).toHaveLength(1)
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
-    expect(ctx.slots.entries('settings.section')[0] !== undefined).toBe(true)
-    expect(resolveSlotLabel(ctx.slots.entries('settings.section')[0]?.options.label)).toBe('Billing')
+    // The page is its own row's configuration, keyed `<package name>#<row id>`;
+    // that row id is also the entry id the Host serves, which is what makes the
+    // legacy section of a document written before the move import into it.
+    expect(ctx.slots.entries('plugins.row.config')[0]?.options.key)
+      .toBe('@deepseek-ai/dsh-client-ui-billing#ui-billing')
 
     await fiber.dispose()
-    expect(ctx.slots.entries('settings.section')).toHaveLength(0)
+    expect(ctx.slots.entries('plugins.row.config')).toHaveLength(0)
     expect(ctx.slots.entries('conversation.composer.dock')).toHaveLength(0)
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
   })
@@ -1683,41 +1745,14 @@ describe('plugin registration', () => {
     expect(face.hooks.billingGroups.getSnapshot()).toEqual([])
   })
 
-  it('writes through the namespace and tells its own readers', async () => {
+  it('publishes the namespace read and tells its own readers', async () => {
     const { ctx, scope } = await mountPlugin({ view: { namespaces: [] } })
-    const face = faceOf(ctx)
+    const face = pillFaceOf(ctx)
 
-    await act(async () => {
-      await face.saveRate('bai/glm-5.3-flash', { cacheHit: '0.15', cacheMiss: '', output: '' }, {})
-    })
-    expect(scope.mutate).toHaveBeenCalledWith([
-      { op: 'set', path: ['models', 'bai/glm-5.3-flash', 'cacheHit'], value: 0.15 },
-    ])
-
-    // Text that describes no change writes nothing rather than clearing the row.
-    scope.mutate.mockClear()
-    await act(async () => {
-      await face.saveRate('bai/glm-5.3-flash', { cacheHit: 'nope', cacheMiss: '', output: '' }, {})
-    })
-    expect(scope.mutate).not.toHaveBeenCalled()
-
-    await act(async () => { await face.clearRate('bai/glm-5.3-flash') })
-    expect(scope.mutate).toHaveBeenCalledWith([
-      { op: 'unset', path: ['models', 'bai/glm-5.3-flash'] },
-    ])
-
-    // A read the page asks for travels as its own write, timed so the Host can
-    // tell one request from the next.
-    scope.mutate.mockClear()
-    await act(async () => { await face.refreshPrices() })
-    expect(scope.mutate).toHaveBeenCalledTimes(1)
-    const [queued] = scope.mutate.mock.calls[0] as unknown as
-      [readonly { op: string; path: readonly string[]; value: unknown }[]]
-    const [request] = queued ?? []
-    expect(request?.op).toBe('set')
-    expect(request?.path).toEqual(['officialRequest'])
-    if (typeof request?.value !== 'number') throw new Error('the request carries no moment')
-    expect(request.value).toBeGreaterThan(0)
+    // The rates are not this half's to write: the Plugins page owns the row
+    // entry's form, and the page writes through it. What this half owns is the
+    // read the two pills bind, and this is the source the renderer hands them;
+    // the page's own face carries no such read because it never binds one.
 
     // The scope stub stands in for the transport: what this package owns is the
     // source it hands the renderer, and that a publication reaches it.

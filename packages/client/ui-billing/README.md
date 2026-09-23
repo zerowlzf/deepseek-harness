@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package prices a Web session from rates the user owns. Its Host half declares the `ui-billing` fields live in its own configuration and caches two provider reads in them: the DeepSeek account balance and the published price table. Its browser half renders two cost figures in the composer's ambient dock, a cost pill in every completed Turn's tail, and the Billing settings page that edits the rates. A route is a `provider/model` pair priced per million tokens in one or two daily windows — cached input, uncached input, output — at the peak rates and at a published off-peak band. The balance is always the DeepSeek account's.
+This package prices a Web session from rates the user owns. Its Host half declares the `ui-billing` fields live in its own configuration and caches two provider reads in them: the DeepSeek account balance and the published price table. Its browser half renders two cost figures in the composer's ambient dock, a cost pill in every completed Turn's tail, and the Billing configuration page on the Plugins page that edits the rates. A route is a `provider/model` pair priced per million tokens in one or two daily windows — cached input, uncached input, output — at the peak rates and at a published off-peak band. The balance is always the DeepSeek account's.
 
 ## Table of Contents
 
@@ -115,7 +115,7 @@ Both folds also charge each stretch in the price window it happened in. The sess
 
 ### Registration
 
-Three surfaces, each restored on unload: `settings.section` (the Billing page), `conversation.composer.dock` (the session-cost and balance figures in the composer's ambient dock), and `conversation.chat.turnTail` (the per-Turn cost pill in the completed Turn's tail). The two figure seats are list slots their owning packages declare, and an owner share reaches an entry spread flat onto its props, so the Turn pill reads `turn` directly, the way the shipped produced-files entry does. Components type their props as the slot's shares — `PropsRuntime` (owner share and session seats), `InjectFace` over this plugin's face, and `PropsLocale` — never as a hand-written list of members.
+Three surfaces, each restored on unload: `plugins.row.config` (the Billing configuration page, keyed `@deepseek-ai/dsh-client-ui-billing#ui-billing` — this package's own row on the Plugins page), `conversation.composer.dock` (the session-cost and balance figures in the composer's ambient dock), and `conversation.chat.turnTail` (the per-Turn cost pill in the completed Turn's tail). The page is the custom-page case the configuration contract documents: the Plugins page owns the row entry's form and hands it over, so the page stages an edit and one save writes every staged write through `form.mutate`, while the rates' rows — one field per route and price window over a map — stay this package's own controls, which the shared scalar field kit cannot express. The two figure seats are list slots their owning packages declare, and an owner share reaches an entry spread flat onto its props, so the Turn pill reads `turn` directly, the way the shipped produced-files entry does. Components type their props as the slot's shares — `PropsRuntime` (owner share and session seats), `InjectFace` over this plugin's face, and `PropsLocale` — never as a hand-written list of members.
 
 The settings page lists one card per provider whose profile the user layer configures, whose adapter is currently registered, or whose deployment-level profile carries models (the shipped official provider is one); a catalogue entry with none of those carries nothing to price and is left out. Each card's models come from that profile, and any route a stored rate row or a typed input names keeps its card, so a route whose provider disappeared stays editable and clearable.
 
@@ -131,9 +131,11 @@ The apply closure owns every ctx read. Components receive a `useBilling` selecto
 Read these pages when the displays are not enough. They move from the browser surfaces to the measurement and the settings transport they read.
 
 - [dsh-token-meter](../../llm/token-meter/README.md) — the `tokenUsage` projection this package accumulates.
-- [dsh-settings](../../settings/settings/README.md) — the namespace seam the Host half registers and the browser edits.
+- [dsh-settings](../../settings/settings/README.md) — the configuration service whose form the Host half writes through and the page owner hands to the page.
 - [dsh-web](../../web/web/README.md) — the web capability the Host reads the published price page through.
-- [ui-settings](../ui-settings/README.md) — the settings shell and the namespace scope the page binds.
+- [ui-settings](../ui-settings/README.md) — the shared configuration form the page owner reads an entry through.
+- [ui-plugin-manager](../ui-plugin-manager/README.md) — the Plugins page whose `plugins.row.config` slot this package's page registers into, and whose `SettingsForm`-less custom-page contract it follows.
+- [ui-primitives](../ui-primitives/README.md) — the shared settings-form frame the page renders its own controls inside.
 - [ui-chat](../ui-chat/README.md) — the pills, dialogs, and turn-tail chain this package extends.
 
 -----

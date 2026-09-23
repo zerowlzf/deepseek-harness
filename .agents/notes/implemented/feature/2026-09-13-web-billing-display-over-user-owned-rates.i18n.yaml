@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-13-web-billing-display-over-user-owned-rates.md
-2026-09-13-web-billing-display-over-user-owned-rates.md: e09194baaa7d916442052d65fdbbe31cd026a857
-2026-09-13-web-billing-display-over-user-owned-rates.zh.md: 478577fa5613c7c578ef27cfcb6196c6101b4997
+2026-09-13-web-billing-display-over-user-owned-rates.md: b5c30e94b4a6cf2b97b0433b74b5e7150b999ba7
+2026-09-13-web-billing-display-over-user-owned-rates.zh.md: 3eed3b82998b90c646b991e6eef2004893027753

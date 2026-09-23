@@ -32,28 +32,40 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the chat contract the per-Turn pill is seated on
 // ('conversation.chat.turnTail' and its owner share).
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+// Type-only: pulls the Plugins page's SlotMap merge (the 'plugins.row.config'
+// entry this package's own configuration page registers into).
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { NS, type BillingSettings } from '../settings.ts'
-import type { BillingInjected } from './face.ts'
-import { LOCALE_NS, en, zh, type BillingKey, type BillingTranslate } from './locales.ts'
-import { rateOps } from './rate-ops.ts'
+import type { BillingPageInjected, BillingPillsInjected } from './face.ts'
+import { LOCALE_NS, en, zh, type BillingKey } from './locales.ts'
 import { providerRoutes, type ProviderRouteGroup } from './routes.ts'
 import { SessionCostMeter } from './CostMeter.tsx'
 import { TurnCostMeter } from './TurnCostMeter.tsx'
-import { BillingSection } from './SettingsSection.tsx'
+import { BillingPage } from './BillingPage.tsx'
 
-export type { BillingSectionProps } from './SettingsSection.tsx'
+export type { BillingPageProps } from './BillingPage.tsx'
 export type { SessionCostMeterProps } from './CostMeter.tsx'
 export type { TurnCostMeterProps } from './TurnCostMeter.tsx'
-export type { BillingInjected } from './face.ts'
+export type { BillingPageInjected, BillingPillsInjected } from './face.ts'
 export type { BillingKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Billing pill, dialog, and settings copy. */
+    /** Billing pill, dialog, and configuration-page copy. */
     billing: BillingKey
   }
 }
+
+/**
+ * The `plugins.row.config` key of this package's own row.
+ *
+ * The key is `<package name>#<row id>`, and this package keeps its row id equal
+ * to {@link NS}: the Host serves the configuration entry under the row id, so
+ * the page owner resolves exactly this entry's form, and a document written
+ * before the move to Profile configuration is imported into the same id.
+ */
+export const BILLING_ROW_CONFIG_KEY = `@deepseek-ai/dsh-client-ui-billing#${NS}`
 
 /** Required services: the slot ledger, copy dictionaries, and the configuration form. */
 export const inject = ['slots', 'locale', 'configForms', 'remote', 'remote.llm']
@@ -65,9 +77,6 @@ export const inject = ['slots', 'locale', 'configForms', 'remote', 'remote.llm']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(LOCALE_NS, { zh, en }), 'ui-billing: copy dictionaries')
   const scope = ctx.configForms.get<BillingSettings>(NS)
-  // The nav label is registration-time text, so it reads the bound translate
-  // directly; every component takes the framework's own `t` seat instead.
-  const t: BillingTranslate = ctx.locale.bind(LOCALE_NS)
   const groups = createSnapshotStore<readonly ProviderRouteGroup[]>([])
 
   /**
@@ -115,73 +124,38 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'ui-billing: provider directory invalidations')
 
-  /**
-   * Write one route's rates, or drop the row when the user emptied it.
-   * @param route - the `provider/model` key to write.
-   * @param peak - typed peak-window values by field name.
-   * @param offPeak - typed off-peak-window values by field name.
-   * @returns settlement after the namespace commits the change.
-   */
-  const saveRate = async (
-    route: string,
-    peak: Readonly<Record<string, string>>,
-    offPeak: Readonly<Record<string, string>>,
-  ): Promise<void> => {
-    const ops = rateOps(route, peak, offPeak, scope.getSnapshot().value?.models[route])
-    // No operations means the typed text described no change: a figure that
-    // does not parse writes nothing rather than clearing the stored row.
-    if (ops.length > 0) await scope.mutate(ops)
-  }
-
-  /**
-   * Remove one stored rate row.
-   * @param route - the `provider/model` key to clear.
-   * @returns settlement after the namespace commits the change.
-   */
-  const clearRate = async (route: string): Promise<void> => {
-    await scope.mutate([{ op: 'unset', path: ['models', route] }])
-  }
-
-  /**
-   * Ask the Host to read the published price page now.
-   *
-   * The automatic read is long-spaced, so this is how the page asks for one
-   * sooner: the request is a settings write because that document is the one
-   * store both halves share. The Host clears the field when the read settles,
-   * which is what the page reads as that read being in flight.
-   * @returns settlement after the namespace records the request.
-   */
-  const refreshPrices = async (): Promise<void> => {
-    await scope.mutate([{ op: 'set', path: ['officialRequest'], value: Date.now() }])
-  }
-
-  const injected = (): BillingInjected => ({
+  const injectedPills = (): BillingPillsInjected => ({
     hooks: {
       billing: {
         getSnapshot: () => scope.getSnapshot(),
         subscribe: listener => scope.subscribe(listener),
       },
+    },
+  })
+
+  const injectedPage = (): BillingPageInjected => ({
+    hooks: {
       billingGroups: {
         getSnapshot: () => groups.getSnapshot(),
         subscribe: listener => groups.subscribe(listener),
       },
     },
     routeGroups,
-    saveRate,
-    clearRate,
-    refreshPrices,
   })
 
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'billing',
-    // After every shipped section: the nav reads general, models, plugins,
-    // agent presets, then the rates.
-    order: 30,
-    label: () => t('section.label'),
+  // The Plugins page hosts a plugin's configuration, so the rates page is this
+  // package's own row entry rather than a Settings section: a plugin page
+  // registers into its bundle row while the Host serves the entry, and the page
+  // owner hands the page that entry's form. The page is the custom-page case the
+  // configuration contract documents — its rows are one rate field per route and
+  // price window, a shape the shared scalar field kit does not express — so it
+  // reads `form.state` and writes through `form.mutate`.
+  ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+    name: 'plugins.row.config',
+    key: BILLING_ROW_CONFIG_KEY,
     locale: LOCALE_NS,
-    inject: injected,
-  }, BillingSection))
+    inject: injectedPage,
+  }, BillingPage))
 
   // The composer's ambient dock owns the line these figures belong to, so the
   // dock's own list is the seat: the shipped stats row sits there too, and the
@@ -191,7 +165,7 @@ export function apply(ctx: ClientContext): void {
     id: 'billing',
     order: 0,
     locale: LOCALE_NS,
-    inject: injected,
+    inject: injectedPills,
   }, SessionCostMeter))
 
   // A completed Turn's tail is the seat: it is the list of feature
@@ -205,6 +179,6 @@ export function apply(ctx: ClientContext): void {
     id: 'billing',
     order: 0,
     locale: LOCALE_NS,
-    inject: injected,
+    inject: injectedPills,
   }, TurnCostMeter))
 }

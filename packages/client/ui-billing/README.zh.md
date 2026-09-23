@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包按用户自有的单价，为一次 Web 会话计价。它的 Host 半边把 `ui-billing` 这些字段声明为自己配置里的活字段，并在其中缓存两项来自提供方的读取：DeepSeek 账户余额与公布的价目表。浏览器半边渲染 composer 环境 dock 里的两个费用数字、每个已完成轮次 tail 里的费用胶囊，以及用于编辑单价的「计费」设置页。一条路由就是一对 `provider/model`，按「元 / 百万 tokens」在一个或两个每日时段内计费——缓存命中输入、未命中输入、输出——分别按高峰单价与公布的空闲一档。余额始终是 DeepSeek 账户的余额。
+本包按用户自有的单价，为一次 Web 会话计价。它的 Host 半边把 `ui-billing` 这些字段声明为自己配置里的活字段，并在其中缓存两项来自提供方的读取：DeepSeek 账户余额与公布的价目表。浏览器半边渲染 composer 环境 dock 里的两个费用数字、每个已完成轮次 tail 里的费用胶囊，以及 Plugins 页上用于编辑单价的「计费」配置页。一条路由就是一对 `provider/model`，按「元 / 百万 tokens」在一个或两个每日时段内计费——缓存命中输入、未命中输入、输出——分别按高峰单价与公布的空闲一档。余额始终是 DeepSeek 账户的余额。
 
 ## 目录
 
@@ -115,7 +115,7 @@ officialRequest: null
 
 ### 注册
 
-三个界面，卸载时各自还原：`settings.section`（计费页）、`conversation.composer.dock`（composer 环境 dock 里的本会话费用与余额两个数字），以及 `conversation.chat.turnTail`（已完成轮次 tail 里的每轮费用胶囊）。两个数字座位都是各自所属包声明的 list 槽；拥有者份额以**摊平**方式到达条目，因此轮次胶囊直接读 `turn`，与官方交付文件条目是同一种读法。组件一律按槽的各份份额声明 props——`PropsRuntime`（拥有者份额与会话座位）、本插件面的 `InjectFace`、以及 `PropsLocale`——绝不手写成员清单。
+三个界面，卸载时各自还原：`plugins.row.config`（计费配置页，键为 `@deepseek-ai/dsh-client-ui-billing#ui-billing`——本包在 Plugins 页上自己那一行的配置）、`conversation.composer.dock`（composer 环境 dock 里的本会话费用与余额两个数字），以及 `conversation.chat.turnTail`（已完成轮次 tail 里的每轮费用胶囊）。该页正是配置契约里的「自定义页」情形：Plugins 页拥有该行条目的 form 并交给页面，因此页面把编辑暂存、由一次保存通过 `form.mutate` 写出全部改动；而单价那些行——一张以「路由 × 价格时段」为键的映射、每格一个字段——仍由本包自绘控件承载，这是共享的标量字段套件表达不了的。两个数字座位都是各自所属包声明的 list 槽；拥有者份额以**摊平**方式到达条目，因此轮次胶囊直接读 `turn`，与官方交付文件条目是同一种读法。组件一律按槽的各份份额声明 props——`PropsRuntime`（拥有者份额与会话座位）、本插件面的 `InjectFace`、以及 `PropsLocale`——绝不手写成员清单。
 
 计费页为「用户层确实配置过」「适配器当前已注册」或「部署层 profile 里带模型」（官方提供方就是这一类）的提供方各给一张卡片；三者都不占的目录条目没有可定价的东西，就不列出。每张卡片的模型来自那份 profile，模型列表收在该卡片自己的编辑控件之后；任何被某条已存单价行或本页刚输入的路由点名的提供方同样保留卡片，因此提供方消失的路由仍然可编辑、可清除。
 
@@ -131,9 +131,11 @@ officialRequest: null
 当这些显示不够用时，读这些页面。它们从浏览器界面走向它所读取的测量与 settings 传输。
 
 - [dsh-token-meter](../../llm/token-meter/README.zh.md) — 本包所累积的 `tokenUsage` 投影。
-- [dsh-settings](../../settings/settings/README.zh.md) — Host 半边注册、浏览器半边编辑的命名空间 seam。
+- [dsh-settings](../../settings/settings/README.zh.md) — Host 半边写入、页面所有者再转交给页面的配置服务。
 - [dsh-web](../../web/web/README.zh.md) — Host 读取公布价页面所用的网页读取能力。
-- [ui-settings](../ui-settings/README.zh.md) — 设置外壳，以及本页绑定的命名空间 scope。
+- [ui-settings](../ui-settings/README.zh.md) — 页面所有者据以读取条目的共享配置 form。
+- [ui-plugin-manager](../ui-plugin-manager/README.zh.md) — Plugins 页：本包页面注册进它的 `plugins.row.config` 槽，并遵循它的自定义页契约。
+- [ui-primitives](../ui-primitives/README.zh.md) — 页面用于承载自绘控件的共享设置表单外框。
 - [ui-chat](../ui-chat/README.zh.md) — 本包所扩展的胶囊、对话框与 turn-tail 链。
 
 -----
