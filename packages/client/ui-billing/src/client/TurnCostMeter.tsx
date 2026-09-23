@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom'
 import type { ChatConversationViewNode, TurnTailChatData } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DEFAULT_CURRENCY, pricesByWindow, routeKey, type BillingSettings, type ModelRate } from '../settings.ts'
-import type { BillingInjected } from './face.ts'
+import type { BillingPillsInjected } from './face.ts'
 import { LOCALE_NS } from './locales.ts'
 import { effectiveRates } from './official-rates.ts'
 import { turnCost, turnRouteUsage, turnRoutes, type TurnAttempt, type TurnRouteUsage } from './cost.ts'
@@ -36,7 +36,7 @@ import dialogCss from './stat-dialog.module.css'
  */
 export type TurnCostMeterProps =
   & PropsRuntime<'conversation.chat.turnTail'>
-  & InjectFace<BillingInjected>
+  & InjectFace<BillingPillsInjected>
   & PropsLocale<typeof LOCALE_NS>
 
 /** Read one finite number out of a provider-reported usage payload. */
