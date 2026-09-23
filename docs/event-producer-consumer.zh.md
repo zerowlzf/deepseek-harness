@@ -97,7 +97,7 @@
 | `internal/service` | - | [`agent-preset-registry`](../packages/preset/agent-preset-registry), `gateway` |
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, [`web`](../packages/web/web) |
 | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
-| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai) |
+| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `speech-to-text`, `ui-billing` |
 | `slots/changed` | `ui-renderer` (`emit`) | - |
 
 Maintenance mode: generated: Cordis event declarations and producer/listener edges are resolved from the repository TypeScript Program.
