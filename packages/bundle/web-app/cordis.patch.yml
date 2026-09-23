@@ -302,7 +302,8 @@
     # Session and turn cost over user-owned per-model rates, plus the DeepSeek
     # account balance this row reads and caches. One dual-face row: the Host
     # half declares the live fields and owns the balance refresh chain, the
-    # browser half renders the pills and the Billing settings page. The row id
+    # browser half renders the pills and the Billing configuration page on the
+    # Plugins page. The row id
     # is the entry id the page and the Host address, and therefore the section
     # a document written before the move to Profile configuration migrates into.
     - id: ui-billing
