@@ -8,7 +8,7 @@ import { memo, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { IconDatabaseOutlineRegular, IconGaugeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { InjectFace, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsRenderSlots, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
@@ -119,13 +119,20 @@ export function billedInputTokens(usage: TokenUsageProjection): number {
   return usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
 }
 
-/** Props: the conversation-snapshot selector plus the projection read seat. */
-export interface StatsPillsProps extends InjectFace<PerformanceUsageInjected> {
-  useChat: SnapshotSelectorHook<ChatSnapshot>
-  useProjection: UseProjection
-  /** The owning dock's locale seat. */
-  t: ChatViewSlotProps['t']
-}
+/**
+ * Props: the conversation-snapshot selector, the projection read seat, the
+ * detail-mode seat, and the row's own child hole. A contribution there shares
+ * this row's centred group instead of standing beside it as a second dock row.
+ */
+export type StatsPillsProps =
+  & {
+    useChat: SnapshotSelectorHook<ChatSnapshot>
+    useProjection: UseProjection
+    /** The owning dock's locale seat. */
+    t: ChatViewSlotProps['t']
+  }
+  & InjectFace<PerformanceUsageInjected>
+  & PropsRenderSlots<'conversation.composer.stats'>
 
 function exactCount(value: number, t: ChatViewSlotProps['t']): string {
   return t('message.turnUsage.count', { count: formatExactTokens(value, t) })
@@ -313,7 +320,9 @@ function UsagePill({ usage, t, dialog }: {
   )
 }
 
-export const StatsPills = memo(function StatsPills({ useChat, useProjection, usePerformanceUsage, t }: StatsPillsProps) {
+export const StatsPills = memo(function StatsPills({
+  useChat, useProjection, usePerformanceUsage, renderSlot, t,
+}: StatsPillsProps) {
   const mode = usePerformanceUsage(value => value)
   const settledNodes = useChat(s => s.legacy.nodes)
   const usage = useProjection('tokenUsage')
@@ -329,6 +338,11 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, use
   // billing (e.g. every request failed) shows its counts without a usage pill.
   const hasTokens = usage !== undefined
     && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)
+  // The hole takes part in this row's own flex layout, so a contribution sits
+  // in the row's own gap beside the pills. `renderSlot` mounts its own anchor
+  // even with no entries, and that anchor is `display: contents`, so an empty
+  // hole costs the row nothing.
+  const trailing = renderSlot('conversation.composer.stats', {})
   if (mode === 'compact') {
     const speed = stats.decodeMs > 0
       ? t('message.tokensPerSecond', { tps: formatTokensPerSecond(stats.decodeTokens / (stats.decodeMs / 1_000)) })
@@ -341,6 +355,7 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, use
         {cacheHit !== null && (
           <span className={css.pill}><IconDatabaseOutlineRegular />{t('stats.cacheHit', { percent: cacheHit })}</span>
         )}
+        {trailing}
       </div>
     )
   }
@@ -367,6 +382,7 @@ export const StatsPills = memo(function StatsPills({ useChat, useProjection, use
           }}
         />
       )}
+      {trailing}
     </div>
   )
 })

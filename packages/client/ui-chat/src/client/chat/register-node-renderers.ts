@@ -68,6 +68,7 @@ export function registerChatNodeRenderers(
     inject: () => ({ hooks: { performanceUsage } }),
     children: {
       'conversation.chat.turnTail': { kind: 'list', scope: 'session' },
+      'conversation.chat.turn-stats': { kind: 'list', scope: 'session' },
       'conversation.chat.assistant-actions': { kind: 'list', scope: 'session' },
     },
   }, TurnTailNodeView))

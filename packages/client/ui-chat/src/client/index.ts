@@ -25,7 +25,7 @@ export type {
 export type {
   AssistantChatData, ChatConversationViewNode, ChatNode, ChatNodeKind,
   FinalAssistantChatData, ManualCompactionChatData, RetryChatData, ToolChatData,
-  TurnProcessChatData, TurnTailChatData,
+  TurnProcessChatData, TurnTailChatData, TurnTokenUsage, TurnTokenUsageRoute,
 } from './contract/chat-nodes.ts'
 export type { ChatStoreState, ToolCallId, TurnProcessViewEntry } from './contract/store.ts'
 export type { TranscriptViewRowInjected, TranscriptViewRowProps } from './settings/TranscriptViewRow.tsx'

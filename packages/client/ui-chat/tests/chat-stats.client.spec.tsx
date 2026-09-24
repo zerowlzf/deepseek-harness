@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type {
   AssistantMessageNode, ChatSnapshot, LegacyConversationSlice, ToolResultNode,
@@ -144,8 +145,19 @@ describe('StatsPills', () => {
   function props(
     source: { getSnapshot(): ChatSnapshot; subscribe(fn: () => void): () => void },
     values: Record<string, unknown> = { tokenUsage: USAGE },
+    trailing: ReactNode = null,
   ): StatsPillsProps {
-    return { usePerformanceUsage: selector => selector('detailed'), useChat: bindSnapshotSelector(source), useProjection: projections(values), t: tEn }
+    return {
+      usePerformanceUsage: selector => selector('detailed'),
+      useChat: bindSnapshotSelector(source),
+      useProjection: projections(values),
+      renderSlot: ((key: string) =>
+        key === 'conversation.composer.stats' ? trailing : null) as StatsPillsProps['renderSlot'],
+      // The session-scope child declaration derives this seat; the row never
+      // invokes it (a test stub, like ChatView passes through).
+      SessionProvider: ({ children }) => <>{children}</>,
+      t: tEn,
+    }
   }
 
   function tokenUsage(cacheReadTokens: number, uncachedInputTokens: number) {
@@ -197,6 +209,23 @@ describe('StatsPills', () => {
       contextPressure: {},
     })} />)
     expect(emptyView.container.textContent).toBe('')
+  })
+
+  it('renders a trailing contribution inside the row on the row gap', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsPills {...props(source, { tokenUsage: USAGE }, <b>7</b>)} />)
+    const row = view.container.querySelector('[data-composer-stats]') as HTMLElement
+    // The contribution is one of the row's own items beside the two pills: the
+    // row's own text carries it, with no divider and no wrapper between them.
+    expect(row.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%7')
+  })
+
+  it('leaves the row unchanged when the hole renders nothing', () => {
+    const { source } = makeSource({ nodes: [assistant(1, 1)] })
+    const view = render(<StatsPills {...props(source)} />)
+    const row = view.container.querySelector('[data-composer-stats]') as HTMLElement
+    expect(row.children).toHaveLength(2)
+    expect(row.textContent).toBe('1 turns 1 steps105 tok·Cache hit 90%')
   })
 
   it.each([

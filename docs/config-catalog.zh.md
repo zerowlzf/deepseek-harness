@@ -483,6 +483,162 @@ export interface Config {
 
 来源： [`packages/client/hmr/src/index.ts:30`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-client-ui-billing"></a>
+
+## `@deepseek-ai/dsh-client-ui-billing`
+
+需要： `settings` · `timer` · `credentials`
+
+```ts config-catalog
+/** Plugin configuration: endpoint and timing fields, plus the live billing fields. */
+export interface Config {
+  /** Credential reference holding the DeepSeek API key. */
+  apiKeyEnv: string
+  /** DeepSeek API base; `/user/balance` is appended. */
+  baseURL: string
+  /** Delay between balance reads; `0` reads once at startup and schedules no further read. */
+  refreshIntervalMs: number
+  /** Published price page rates are read from. */
+  pricingUrl: string
+  /**
+   * Delay between automatic price reads. A published price list moves rarely,
+   * so the wait is long and a restart inside it does not re-read a fresh table;
+   * `0` reads once at startup and schedules no further read. The page can ask
+   * for a read at any time whatever this value is.
+   */
+  pricingRefreshIntervalMs: number
+  /** Whole-request deadline for one read. */
+  requestTimeoutMs: number
+  /** Currency to report and price in when the user has set none. */
+  currency: Volatile<string>
+  /** Rate rows keyed `provider/model`; absent routes are priced by nothing. */
+  models: Volatile<Record<string, ModelRate>>
+  /** Newest Host-read balance; `undefined` until a read writes one, `null` when a write cleared it. */
+  cache: Volatile<BalanceSnapshot | null | undefined>
+  /** Why the newest balance read failed; `undefined` before the first read, `null` when the read succeeded. */
+  cacheError: Volatile<ReadFailure | null | undefined>
+  /** Newest Host-read published price table; `undefined` until a read writes one, `null` when a write cleared it. */
+  official: Volatile<PriceSnapshot | null | undefined>
+  /** Why the newest price read failed; `undefined` before the first read, `null` when the read succeeded. */
+  officialError: Volatile<PriceFailure | null | undefined>
+  /**
+   * A price read the browser asked for, as the moment it asked;
+   * `undefined` while nobody has ever asked, `null` while no request is
+   * pending. The Host clears the field when the requested read settles.
+   */
+  officialRequest: Volatile<number | null | undefined>
+}
+
+/**
+ * One route's rates, in the configured display currency.
+ *
+ * The three flat fields are the peak band, which is what a provider publishing
+ * a single price charges at every hour. `offPeak` is the band charged outside
+ * that provider's peak window; a row without one costs the same all day, which
+ * is the honest reading of a provider that publishes one figure.
+ */
+export interface ModelRate extends RateBand {
+  /** Rates charged outside the peak window; absent means one price at every hour. */
+  offPeak?: RateBand | undefined
+}
+
+/** One balance figure the Host read from the provider account API. */
+export interface BalanceSnapshot {
+  /** Total available balance in {@link BalanceSnapshot.currency}. */
+  total: number
+  /** Currency the provider reported; a display value, never converted. */
+  currency: string
+  /** Whether the provider reports the balance as sufficient for further calls. */
+  available: boolean
+  /** When the Host read it, in epoch milliseconds. */
+  at: number
+}
+
+/**
+ * Why one Host read produced no value.
+ *
+ * The reason is structured rather than a sentence because the browser renders
+ * it: the Host half owns the read and the browser owns the copy, so a failure
+ * crosses that boundary as a kind plus the values its sentence needs, with the
+ * technical detail a person cannot translate riding along for a second line.
+ */
+export type ReadFailure =
+  | {
+    /** Nothing held a value for the referenced key. */
+    readonly kind: 'noKey'
+    /** The credential reference no value was held for. */
+    readonly ref: string
+  }
+  | {
+    /** The endpoint answered with a status other than 200. */
+    readonly kind: 'http'
+    /** The status the endpoint answered with. */
+    readonly status: number
+  }
+  | {
+    /** The request itself did not complete. */
+    readonly kind: 'network'
+    /** Why the transport failed, as the transport reported it. */
+    readonly detail: string
+  }
+  | {
+    /** The response arrived but could not be read as the documented payload. */
+    readonly kind: 'payload'
+    /** The payload as far as the reader could capture it. */
+    readonly detail: string
+  }
+
+/** Rates the Host read from the provider's published price page. */
+export interface PriceSnapshot {
+  /** Model id → published rates, both windows, exactly as that page states them. */
+  models: Record<string, ModelRate>
+  /** Currency the page states its figures in. */
+  currency: string
+  /** When the Host read it, in epoch milliseconds. */
+  at: number
+  /** Page the figures came from. */
+  source: string
+}
+
+/** Why the price read produced no usable table. */
+export type PriceFailure =
+  | Exclude<ReadFailure, {
+    /** The arm this union drops: a price page needs no key, so a missing key is never its failure. */
+    readonly kind: 'noKey'
+  }>
+  | {
+    /**
+     * The deployment mounted no web capability, so no page could be read.
+     * Reads since the native-`fetch` port never produce this arm; it stays in
+     * the union because a persisted failure from before the port still carries
+     * it and the settings schema still validates it.
+     */
+    readonly kind: 'noWeb'
+  }
+  | {
+    /** The page states its figures in a currency the deployment does not price in. */
+    readonly kind: 'currency'
+    /** Currency the page states its figures in. */
+    readonly found: string
+    /** Currency the deployment prices in. */
+    readonly expected: string
+  }
+
+/** Per-million-token rates for one route during one of a provider's price windows. */
+export interface RateBand {
+  /** Cached prompt input. */
+  cacheHit: number
+  /** Uncached prompt input, including cache writes. */
+  cacheMiss: number
+  /** Model output, reasoning tokens included. */
+  output: number
+}
+```
+
+Depends on: `Volatile` (`@deepseek-ai/cordis`)
+
+来源： [`packages/client/ui-billing/src/index.ts:46`](../packages/client/ui-billing/src/index.ts)
+
 <a id="deepseek-aidsh-client-ui-plugin-manager"></a>
 
 ## `@deepseek-ai/dsh-client-ui-plugin-manager`

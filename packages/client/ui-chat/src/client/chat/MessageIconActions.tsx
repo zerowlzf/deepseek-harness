@@ -33,6 +33,12 @@ export interface MessageIconActionsProps {
    * branch control at the end of the icon cluster.
    */
   usageAction?: ReactNode
+  /**
+   * Trailing figures owned by the caller's row (the Turn-stats hole), seated
+   * after the usage cluster and its clock so they read past the shipped pills
+   * at the end of the actions row.
+   */
+  statsAction?: ReactNode
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -44,10 +50,11 @@ export interface MessageIconActionsProps {
  */
 export function MessageIconActions({
   text, time, clock, onBranch, branchUnavailable = false, className,
-  extraActions, usageAction, t,
+  extraActions, usageAction, statsAction, t,
 }: MessageIconActionsProps) {
   const day = useCalendarDay()
   const reasonId = useId()
+  const empty = text.length === 0
   // Same success chrome as CodeBlock: a short check swap after the write,
   // gated so re-clicks during the window neither re-copy nor stack timers.
   const [copied, setCopied] = useState(false)
@@ -82,8 +89,18 @@ export function MessageIconActions({
   return (
     <div className={className === undefined ? css.actions : `${css.actions} ${className}`} data-clock={clock}>
       {clock === 'start' ? clockEl : null}
+      {/* A turn interrupted before any finalized text carries nothing to copy;
+          the control stays in the row (layout is stable across turns) and
+          reports itself unavailable rather than writing an empty clipboard. */}
       <Tooltip label={copied ? t('copied') : t('copy')} side="bottom">
-        <button type="button" className={css.action} aria-label={copied ? t('copied') : t('copy')} onClick={onCopy}>
+        <button
+          type="button"
+          className={css.action}
+          aria-label={copied ? t('copied') : t('copy')}
+          aria-disabled={empty || undefined}
+          data-unavailable={empty || undefined}
+          onClick={empty ? undefined : onCopy}
+        >
           {copied ? <IconCheckOutlineRegular /> : <IconCopyOutlineRegular />}
         </button>
       </Tooltip>
@@ -110,6 +127,7 @@ export function MessageIconActions({
       {clock === 'end'
         ? <span className={css.endInfo}>{usageAction}{clockEl}</span>
         : usageAction}
+      {statsAction}
     </div>
   )
 }

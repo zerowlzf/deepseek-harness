@@ -1,10 +1,15 @@
 /* Two icon pills side by side under the composer, 12/20 tertiary text tier
    with a hover-pill affordance; each pill's click-open panel wears the shared
-   stat-dialog.module.css skin. */
+   stat-dialog.module.css skin. A `conversation.composer.stats` contribution
+   joins the same centred group on the row's own gap, so the group stays one
+   line, stays centred, and reads at one rhythm whatever the trailing figures
+   are. */
 
 .root {
   display: flex;
   justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   min-width: 0;
   max-width: 100%;
@@ -12,6 +17,11 @@
   font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
 }
+
+/* The hole takes part in the row's own flex layout: a contribution's items sit
+   beside the pills instead of inside a box the row would have to measure. The
+   slot anchor carries `display: contents` itself, so an empty hole spends none
+   of the row's gaps. */
 
 /* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */
 .anchor {

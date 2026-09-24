@@ -199,6 +199,14 @@ function finalNode(
       step: state.step,
       blocks: toAssistantBlocks(event.data.message.content),
       usage: event.data.usage,
+      // The route that billed this attempt, carried by the same durable message
+      // the rest of this node comes from. A consumer that prices attempts reads
+      // it to attribute each one; the Chat renderers themselves do not.
+      // `AssistantMessageNode` declares the member natively.
+      providerMetadata: {
+        provider: event.data.message.source.provider,
+        model: event.data.message.source.model,
+      },
       timing: {
         stepStartTime: context.start?.event.time ?? null,
         firstTokenTime: state.firstTokenTime ?? null,

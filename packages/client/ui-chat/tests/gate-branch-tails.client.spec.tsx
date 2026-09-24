@@ -7,7 +7,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { useDetailedPresentation } from './presentation-fixture.client.ts'
 import { useDisclosure } from '../src/client/chat/use-disclosure.ts'
-import { StatsPills } from '../src/client/chat/StatsPills.tsx'
+import { StatsPills, type StatsPillsProps } from '../src/client/chat/StatsPills.tsx'
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
@@ -52,6 +52,8 @@ describe('render branch tails', () => {
         usePerformanceUsage={selector => selector('detailed')}
         t={t}
         useChat={bindSnapshotSelector(source)}
+        renderSlot={(() => null) as StatsPillsProps['renderSlot']}
+        SessionProvider={({ children }) => <>{children}</>}
         useProjection={() => undefined}
       />,
     )
