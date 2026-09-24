@@ -509,6 +509,181 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-shortcuts -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-ui-billing -->
+<a id="deepseek-aidsh-client-ui-billing"></a>
+
+## `@deepseek-ai/dsh-client-ui-billing`
+
+- `inject`: `settings` · `timer` · `credentials`
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/client/ui-billing/src/index.ts:55`](../packages/client/ui-billing/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. Ordinary fields are deployment-level; the rest are live. */
+export interface Config {
+  /** Credential reference holding the DeepSeek API key. */
+  apiKeyEnv: string
+  /** DeepSeek API base; `/user/balance` is appended. */
+  baseURL: string
+  /** Delay between balance reads; `0` reads once at startup and schedules no further read. */
+  refreshIntervalMs: number
+  /** Published price page rates are read from. */
+  pricingUrl: string
+  /**
+   * Delay between automatic price reads. A published price list moves rarely,
+   * so the wait is long and a restart inside it does not re-read a fresh table;
+   * `0` reads once at startup and schedules no further read. The page can ask
+   * for a read at any time whatever this value is.
+   */
+  pricingRefreshIntervalMs: number
+  /** Whole-request deadline for one read. */
+  requestTimeoutMs: number
+  /** Currency rates are stated in, and the code every cost is displayed with. */
+  currency: Volatile<string>
+  /** Rate rows keyed `provider/model`; absent routes are priced by nothing. */
+  models: Volatile<Record<string, ModelRate>>
+  /** Newest Host-read balance, or null before the first successful read. */
+  cache: Volatile<BalanceSnapshot | null>
+  /** Why the newest balance read failed, or null when it succeeded or never ran. */
+  cacheError: Volatile<ReadFailure | null>
+  /** Newest Host-read published price table, or null before the first successful read. */
+  official: Volatile<PriceSnapshot | null>
+  /** Why the newest price read failed, or null when it succeeded or never ran. */
+  officialError: Volatile<PriceFailure | null>
+  /**
+   * A price read the browser asked for, as the moment it asked, or null when
+   * none is pending. The field is the one store both halves share, so the
+   * request travels as this write: the Host reads the page and clears it when
+   * that read settles.
+   */
+  officialRequest: Volatile<number | null>
+}
+
+/**
+ * One route's rates, in the configured display currency.
+ *
+ * The three flat fields are the peak band, which is what a provider publishing
+ * a single price charges at every hour. `offPeak` is the band charged outside
+ * that provider's peak window; a row without one costs the same all day, which
+ * is the honest reading of a provider that publishes one figure.
+ */
+export interface ModelRate extends RateBand {
+  /** Rates charged outside the peak window; absent means one price at every hour. */
+  offPeak?: RateBand | undefined
+}
+
+/** One balance figure the Host read from the provider account API. */
+export interface BalanceSnapshot {
+  /** Total available balance in {@link BalanceSnapshot.currency}. */
+  total: number
+  /** Currency the provider reported; a display value, never converted. */
+  currency: string
+  /** Whether the provider reports the balance as sufficient for further calls. */
+  available: boolean
+  /** When the Host read it, in epoch milliseconds. */
+  at: number
+}
+
+/**
+ * Why one Host read produced no value.
+ *
+ * The reason is structured rather than a sentence because the browser renders
+ * it: the Host half owns the read and the browser owns the copy, so a failure
+ * crosses that boundary as a kind plus the values its sentence needs, with the
+ * technical detail a person cannot translate riding along for a second line.
+ */
+export type ReadFailure =
+  /** Nothing held a value for the referenced key. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'noKey'
+    /** Reference the store holds no value for. */
+    readonly ref: string
+  }
+  /** The endpoint answered with a status other than 200. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'http'
+    /** Status the endpoint answered with. */
+    readonly status: number
+  }
+  /** The request itself did not complete. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'network'
+    /** Transport detail a person cannot translate. */
+    readonly detail: string
+  }
+  /** The response arrived but could not be read as the documented payload. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'payload'
+    /** Parser detail a person cannot translate. */
+    readonly detail: string
+  }
+
+/** Rates the Host read from the provider's published price page. */
+export interface PriceSnapshot {
+  /** Model id → published rates, both windows, exactly as that page states them. */
+  models: Record<string, ModelRate>
+  /** Currency the page states its figures in. */
+  currency: string
+  /** When the Host read it, in epoch milliseconds. */
+  at: number
+  /** Page the figures came from. */
+  source: string
+}
+
+/** Why the price read produced no usable table; a price page needs no key. */
+export type PriceFailure =
+  /** The endpoint answered with a status other than 200. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'http'
+    /** Status the endpoint answered with. */
+    readonly status: number
+  }
+  /** The request itself did not complete. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'network'
+    /** Transport detail a person cannot translate. */
+    readonly detail: string
+  }
+  /** The response arrived but could not be read as the documented payload. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'payload'
+    /** Parser detail a person cannot translate. */
+    readonly detail: string
+  }
+  /** The deployment mounts no web capability, so no page can be read. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'noWeb'
+  }
+  /** The page states its figures in a currency the document does not price in. */
+  | {
+    /** Discriminator naming this reason. */
+    readonly kind: 'currency'
+    /** Currency the page stated its figures in. */
+    readonly found: string
+    /** Currency the document prices in. */
+    readonly expected: string
+  }
+
+/** Per-million-token rates for one route during one of a provider's price windows. */
+export interface RateBand {
+  /** Cached prompt input. */
+  cacheHit: number
+  /** Uncached prompt input, including cache writes. */
+  cacheMiss: number
+  /** Model output, reasoning tokens included. */
+  output: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-billing -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-ui-plugin-manager -->
 <a id="deepseek-aidsh-client-ui-plugin-manager"></a>
 
