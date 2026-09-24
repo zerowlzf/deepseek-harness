@@ -10,7 +10,9 @@ import type { ChatSnapshot } from '../contract/snapshot.ts'
 import css from './TurnTailNodeView.module.css'
 
 type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'>
-  & PropsRenderSlots<'conversation.chat.turnTail' | 'conversation.chat.assistant-actions'>
+  & PropsRenderSlots<
+    'conversation.chat.turnTail' | 'conversation.chat.turnEndInfo' | 'conversation.chat.assistant-actions'
+  >
   & InjectFace<PerformanceUsageInjected>
 
 function lastContent(snapshot: ChatSnapshot, turn: number, skipWarning: boolean): ChatNode | undefined {
@@ -73,6 +75,10 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
         usageAction={detailed && data.tokenUsage !== undefined
           ? <TurnUsagePanel usage={data.tokenUsage} t={t} />
           : null}
+        // The Turn's own readings, between the shipped usage trigger and the
+        // clock: they state figures the accounting already holds, so they read
+        // as part of the end-info cluster rather than as further controls.
+        endReadings={renderSlot('conversation.chat.turnEndInfo', owner)}
         t={t}
       />
     </div>

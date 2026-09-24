@@ -264,6 +264,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.chat.turnTail': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
     /**
+     * Ordered readings inside a completed Turn's action row, between the
+     * shipped Turn-usage trigger and the clock. Each entry receives the Turn,
+     * closing sequence, and file opener, and shares the row's own reveal, so a
+     * reading appears exactly while the row around it does. These are figures a
+     * Turn's own accounting already states, not controls: an action belongs in
+     * `conversation.chat.assistant-actions`.
+     */
+    'conversation.chat.turnEndInfo': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
+    /**
      * Ordered actions for one finalized assistant message. Each entry receives
      * the durable message id; a fresh `id` adds an action and reusing one replaces
      * that entry. With no entries, the standard action row remains unchanged.
