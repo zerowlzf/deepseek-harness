@@ -199,6 +199,13 @@ function finalNode(
       step: state.step,
       blocks: toAssistantBlocks(event.data.message.content),
       usage: event.data.usage,
+      // The route this attempt was billed on, recorded on the durable message:
+      // the same pair the Trajectory target's own definition keeps, so a
+      // consumer can price one Turn's attempts apart.
+      providerMetadata: {
+        provider: event.data.message.source.provider,
+        model: event.data.message.source.model,
+      },
       timing: {
         stepStartTime: context.start?.event.time ?? null,
         firstTokenTime: state.firstTokenTime ?? null,
