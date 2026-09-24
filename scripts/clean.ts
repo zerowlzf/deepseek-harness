@@ -84,6 +84,7 @@ export class RepositoryCleaner {
     // The root project-reference graph is the source of truth for live build targets.
     // Each emitting project declares lib/types as outDir; its parent lib also owns
     // the sibling runtime bundles, so the complete build output root is removed.
+    // Known output roots are the exception: their outDir is itself the output root.
     for (const outputDirectory of this.buildOutputDirectories()) {
       await this.addIfPresent(targets, outputDirectory, canonicalRoot)
     }
@@ -122,7 +123,13 @@ export class RepositoryCleaner {
     const outputs = new Set<string>()
     const pending = [join(this.root, 'tsconfig.json')]
     const visited = new Set<string>()
-    const nativeEntryOutput = join(this.root, 'native/system/packages/entry/lib')
+    // Known output roots are outDirs that are themselves the complete build output:
+    // the root-level declaration-only desktop keyboard test fixture emits no sibling
+    // runtime bundles, matching the native entry that emits directly into lib.
+    const knownOutputRoots = new Set([
+      join(this.root, 'native/system/packages/entry/lib'),
+      join(this.root, 'lib/desktop-keyboard-test-types'),
+    ])
 
     while (pending.length > 0) {
       const nextConfigPath = pending.pop()
@@ -136,11 +143,11 @@ export class RepositoryCleaner {
         const typesDirectory = resolve(parsed.options.outDir)
         const outputDirectory = basename(typesDirectory) === 'types'
           ? dirname(typesDirectory)
-          : typesDirectory === nativeEntryOutput
+          : knownOutputRoots.has(typesDirectory)
             ? typesDirectory
             : undefined
         if (outputDirectory === undefined) {
-          throw new Error(`clean: expected TypeScript outDir to end in /types: ${repositoryPath(this.root, typesDirectory)}`)
+          throw new Error(`clean: expected TypeScript outDir to end in /types or match a known output root: ${repositoryPath(this.root, typesDirectory)}`)
         }
         this.assertRepositoryTarget(outputDirectory)
         outputs.add(outputDirectory)
