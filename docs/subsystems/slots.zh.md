@@ -152,6 +152,7 @@ Factory: conversation.content [ConversationContent]
 │     │        │  └─ conversation.chat.commandview
 │     │        └─ key=turn-tail [TurnTailNodeView]
 │     │           ├─ conversation.chat.turnTail
+│     │           ├─ conversation.chat.turnEndInfo
 │     │           └─ conversation.chat.assistant-actions
 │     └─ id=trajectory [TrajectoryView / TrajectoryTable]
 │        └─ conversation.trajectory.images [MessageImages]
