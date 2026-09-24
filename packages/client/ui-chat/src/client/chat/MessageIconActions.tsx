@@ -33,6 +33,12 @@ export interface MessageIconActionsProps {
    * branch control at the end of the icon cluster.
    */
   usageAction?: ReactNode
+  /**
+   * Slot-rendered readings of the same Turn, seated between the usage trigger
+   * and the clock so a figure a Turn's accounting already states reads as part
+   * of that end-info cluster rather than as another control.
+   */
+  endReadings?: ReactNode
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -44,7 +50,7 @@ export interface MessageIconActionsProps {
  */
 export function MessageIconActions({
   text, time, clock, onBranch, branchUnavailable = false, className,
-  extraActions, usageAction, t,
+  extraActions, usageAction, endReadings, t,
 }: MessageIconActionsProps) {
   const day = useCalendarDay()
   const reasonId = useId()
@@ -108,7 +114,7 @@ export function MessageIconActions({
         <span id={reasonId} className={css.visuallyHidden}>{t('message.branchUnavailable')}</span>
       )}
       {clock === 'end'
-        ? <span className={css.endInfo}>{usageAction}{clockEl}</span>
+        ? <span className={css.endInfo}>{usageAction}{endReadings}{clockEl}</span>
         : usageAction}
     </div>
   )
