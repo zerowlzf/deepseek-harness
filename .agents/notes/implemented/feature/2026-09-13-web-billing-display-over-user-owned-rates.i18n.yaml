@@ -1,6 +1,37 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-13-web-billing-display-over-user-owned-rates.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-13-web-billing-display-over-user-owned-rates.md
-2026-09-13-web-billing-display-over-user-owned-rates.md: 4b1c06116c65754bac0d66f303577ccc75f4cb15
-2026-09-13-web-billing-display-over-user-owned-rates.zh.md: d00ca8f508e411572d8906401caad7c5c5330c34
+/agent-note-web-billing-display-over-user-owned-model-rates:
+  en: c956b83067c65830
+  zh: b3e18252f0b01e0a
+/agent-note-web-billing-display-over-user-owned-model-rates/problem:
+  en: d83834a7b2f66d13
+  zh: e60e3e8762accb6c
+/agent-note-web-billing-display-over-user-owned-model-rates/decision:
+  en: 66a6f85d7741ef1e
+  zh: db09b4a3df1a0e70
+/agent-note-web-billing-display-over-user-owned-model-rates/decision/the-live-configuration-is-the-whole-contract:
+  en: b48466cfdd523e6f
+  zh: b22d63adced69f50
+/agent-note-web-billing-display-over-user-owned-model-rates/decision/rate-windows:
+  en: 8f55510a904a0905
+  zh: 308d7a39d3e41252
+/agent-note-web-billing-display-over-user-owned-model-rates/decision/two-folds-because-the-surfaces-have-different-evidence:
+  en: 3c11cb1330838856
+  zh: 2de5c15f9b10d2e9
+/agent-note-web-billing-display-over-user-owned-model-rates/decision/the-host-reads-are-the-only-requests:
+  en: ad171ab3f004e76a
+  zh: dd9d17d79d450d4b
+/agent-note-web-billing-display-over-user-owned-model-rates/decision/registration:
+  en: e5a9063e6a89f052
+  zh: 2347a87d85d515cd
+/agent-note-web-billing-display-over-user-owned-model-rates/alternatives-considered:
+  en: 96b834c2aca7b870
+  zh: edf7dab532b266d3
+/agent-note-web-billing-display-over-user-owned-model-rates/consequences:
+  en: 291eeee2454c0076
+  zh: 981564dacc748bc2
+/agent-note-web-billing-display-over-user-owned-model-rates/related:
+  en: d98eaad0b59c16d3
+  zh: d7473f235d827cbc
