@@ -40,6 +40,15 @@ describe('composer figures layout', () => {
       'font: inherit',
       'line-height: inherit',
     ]))
+    // The shipped pip carries the same two declarations, and they belong
+    // together: ui-theme's corner-shape.css applies a superellipse to every
+    // rounded surface, so a full-round pill that omits the pairing renders with
+    // squared-off ends on engines that support it. ui-theme's own stylesheet gate
+    // checks the pairing repo-wide; this pins it in the package that owns the rule.
+    expect(declarationsFrom(css, '.pill')).toEqual(expect.arrayContaining([
+      'border-radius: 999px',
+      'corner-shape: round',
+    ]))
   })
 })
 
