@@ -591,6 +591,17 @@ describe('readBalance', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  it('answers a resolver that refuses instead of rejecting the read', async () => {
+    const fetchImpl = vi.fn()
+    vi.stubGlobal('fetch', fetchImpl)
+    // The credentials seam documents that tolerating a throw is the consumer's
+    // job, and a read settles with a snapshot or a reason either way: the timer
+    // that calls this one is the only path that ever reads a balance again.
+    const result = await readBalance(request, () => Promise.reject(new Error('unreadable store')))
+    expect(result.ok ? undefined : result.failure).toEqual({ kind: 'noKey', ref: 'BILLING_TEST_KEY' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it('prefers the configured currency and reports availability', async () => {
     vi.stubEnv('BILLING_TEST_KEY', 'k')
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({
