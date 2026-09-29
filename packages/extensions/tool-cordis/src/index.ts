@@ -60,12 +60,15 @@ export function apply(ctx: Context): void {
     async execute(args, exec) {
       // `type: 'json'` projects without a wire type, and some providers then
       // serialize the nested argument as a JSON string before validation.
-      // Re-parse at this boundary; a malformed string falls through to the
-      // provider's own schema error unchanged.
+      // Re-parse at this boundary, adopting only a structured result: a method
+      // that declares a string input keeps the text the model sent instead of
+      // having it read as a number or a boolean. A malformed string falls
+      // through to the provider's own schema error unchanged.
       let input = args.input
       if (typeof input === 'string') {
         try {
-          input = JSON.parse(input) as typeof input
+          const reparsed = JSON.parse(input) as typeof input
+          if (reparsed !== null && typeof reparsed === 'object') input = reparsed
         } catch {
           /* fall through to provider validation */
         }

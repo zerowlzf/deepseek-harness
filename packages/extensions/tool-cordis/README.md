@@ -70,6 +70,7 @@ Unchanged tool schemas remain prefix-stable. Query results append to history; en
 
 - Client queries need a responding page and use the Host runner's [bounded wait and retry policy](../cordis-host-runner/README.md#client-inspection). Inspection cannot invoke service methods, configure plugins, or execute generated code.
 - `Config.listConfigs` walks the profile Loader tree only. Agent preset `plugins` lists mount in detached preset trees, so a plugin present only inside a preset declaration is not listed unless the profile tree also mounts it.
+- `cordis_inspect_query`'s `input` field carries a JSON value with no wire type in the projected schema, so a provider that serializes the nested argument as a JSON string is accepted as well: the string is re-parsed, and the result still has to satisfy the provider method's own schema. Only an object or array parse is adopted, so a method that declares a string input still receives the text it was sent.
 
 <a id="dev-note"></a>
 ### Dev Note
