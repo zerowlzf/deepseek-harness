@@ -25,7 +25,6 @@ import {
 import { OFFICIAL_PROVIDER, type ProviderRouteGroup } from './routes.ts'
 import type { BillingPageInjected } from './face.ts'
 import { ageOf, balanceFailureText, formatBalance, priceFailureText, windowKey } from './format.ts'
-import { currencyOf } from './CostMeter.tsx'
 import { rateOps } from './rate-ops.ts'
 import { IconCoinOutline16, IconWalletOutline16 } from './icons.tsx'
 import { LOCALE_NS, type BillingKey } from './locales.ts'
@@ -236,7 +235,9 @@ export function BillingPage({
     const ops: SettingsPathOpView[] = []
     for (const route of removed) ops.push({ op: 'unset', path: ['models', route] })
     for (const route of stagedRoutes()) {
-      ops.push(...rateOps(route, typedBand(route, 'peak'), typedBand(route, 'offPeak'), rates[route]))
+      ops.push(...rateOps(
+        route, typedBand(route, 'peak'), typedBand(route, 'offPeak'), rates[route], defaultRateOf(route, published),
+      ))
     }
     /* v8 ignore next -- the shell saves only a staged, valid edit, and both staged shapes produce an operation. */
     if (ops.length === 0) return
@@ -422,7 +423,7 @@ export function BillingPage({
             {balance !== null && !balance.available && (
               <span className={css.warn}>{t('pill.dialog.availableNo')}</span>
             )}
-            <span>{currencyOf(balance, settings?.currency ?? DEFAULT_CURRENCY)}</span>
+            <span>{settings?.currency ?? DEFAULT_CURRENCY}</span>
           </div>
           {settings?.cacheError != null && (
             <div className={css.warn}>{balanceFailureText(settings.cacheError, t)}</div>

@@ -23,7 +23,7 @@ import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/cli
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import { DEFAULT_CURRENCY, NS, type BillingSettings } from '../src/settings.ts'
 import { providerRoutes, type ProviderRouteGroup } from '../src/client/routes.ts'
-import { SessionCostMeter, currencyOf, freshness, groupSteps } from '../src/client/CostMeter.tsx'
+import { SessionCostMeter, freshness, groupSteps } from '../src/client/CostMeter.tsx'
 import { TurnCostMeter, TurnCostMeterTail, attemptsOf } from '../src/client/TurnCostMeter.tsx'
 import { BillingPage, type BillingPageProps } from '../src/client/BillingPage.tsx'
 import type { BillingPageInjected, BillingPillsInjected } from '../src/client/face.ts'
@@ -190,13 +190,6 @@ const FLASH_RATES = { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 }
 /** A moment inside the published peak window, so a windowed row is deterministic. */
 const AT = Date.UTC(2024, 0, 1, 1, 0)
 
-describe('currency selection', () => {
-  it('uses the account currency, then the configured one', () => {
-    expect(currencyOf({ total: 1, currency: 'USD', available: true, at: 0 }, 'CNY')).toBe('USD')
-    expect(currencyOf(null, 'EUR')).toBe('EUR')
-  })
-})
-
 describe('session cost pill', () => {
   it('renders nothing before any usage or balance exists', () => {
     const stub = stubConfigForm<BillingSettings>()
@@ -236,6 +229,35 @@ describe('session cost pill', () => {
     expect(screen.getByLabelText('¥18.00 this session')).toBeDefined()
     expect(screen.getByLabelText('DeepSeek account balance ¥12.75')).toBeDefined()
     expect(screen.getByLabelText('DeepSeek account balance ¥12.75').textContent).toContain('12.75')
+  })
+
+  it('labels a cost in the currency its rates are stated in, not the account\'s', () => {
+    const stub = stubConfigForm<BillingSettings>()
+    stub.publish(snapshot({
+      value: {
+        currency: 'CNY',
+        models: { 'bai/glm-5.3-flash': FLASH_RATES },
+        cache: { total: 1.5, currency: 'USD', available: true, at: Date.now() },
+        cacheError: null,
+      },
+    }))
+    const usage: TokenUsageProjection = {
+      uncachedInputTokens: 0, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0,
+    }
+    render(
+      <SessionCostMeter {...seats()}
+        useProjection={projection({
+          tokenUsage: usage,
+          modelSelection: { lastUsed: { provider: 'bai', model: 'glm-5.3-flash' }, next: null },
+        }) as never}
+        {...billingFace(stub)}
+        t={t} />,
+    )
+    // The stored rates are CNY figures, so the cost is a CNY amount even though
+    // the account reports dollars; the balance keeps the currency it was read
+    // in. Formatting a CNY figure with the account's symbol would misstate it.
+    expect(screen.getByText('¥13.50')).toBeDefined()
+    expect(screen.getByLabelText('DeepSeek account balance $1.50')).toBeDefined()
   })
 
   it('reprices when a rate is edited', async () => {
@@ -1145,10 +1167,16 @@ describe('settings page', () => {
     fireEvent.click(screen.getByText('Save'))
     await act(async () => { await Promise.resolve() })
     // The page hands the entry's form the operation the row describes: the
-    // typed off-peak figure at its own path, and nothing for the fields the
-    // user left alone.
+    // typed off-peak figure at its own path, plus the published peak figures
+    // those fields were displaying, so the stored row carries what the row
+    // showed instead of resolving the untouched band into zeroes.
     expect(mutate).toHaveBeenCalledWith(
-      [{ op: 'set', path: ['models', 'deepseek-official/deepseek-v4-flash', 'offPeak', 'cacheHit'], value: 0.03 }],
+      [
+        { op: 'set', path: ['models', 'deepseek-official/deepseek-v4-flash', 'cacheHit'], value: 0.04 },
+        { op: 'set', path: ['models', 'deepseek-official/deepseek-v4-flash', 'cacheMiss'], value: 2 },
+        { op: 'set', path: ['models', 'deepseek-official/deepseek-v4-flash', 'output'], value: 8 },
+        { op: 'set', path: ['models', 'deepseek-official/deepseek-v4-flash', 'offPeak', 'cacheHit'], value: 0.03 },
+      ],
     )
   })
 
@@ -2035,7 +2063,7 @@ describe('plugin registration', () => {
 
 describe('rate write operations', () => {
   it('writes the peak band alone when no second band was typed', () => {
-    expect(rateOps('a/b', { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' }, {}, undefined)).toEqual([
+    expect(rateOps('a/b', { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' }, {}, undefined, undefined)).toEqual([
       { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
       { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
       { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
@@ -2050,6 +2078,7 @@ describe('rate write operations', () => {
       { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' },
       { cacheHit: '0.075', output: '6.75' },
       undefined,
+      undefined,
     )).toEqual([
       { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
       { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
@@ -2059,12 +2088,53 @@ describe('rate write operations', () => {
     ])
   })
 
+  it('completes a new row from the figures it displayed', () => {
+    // The peak fields showed the published price, so they are stored with the
+    // band the user typed: leaving them out would resolve the peak band into
+    // zeroes and bill every peak hour at nothing.
+    expect(rateOps(
+      'a/b',
+      {},
+      { cacheHit: '0.075', output: '6.75' },
+      undefined,
+      { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5, offPeak: { cacheHit: 0.075, cacheMiss: 2.25, output: 6.75 } },
+    )).toEqual([
+      { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
+      { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
+      { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
+      { op: 'set', path: ['models', 'a/b', 'offPeak', 'cacheHit'], value: 0.075 },
+      { op: 'set', path: ['models', 'a/b', 'offPeak', 'output'], value: 6.75 },
+    ])
+    // A figure the user typed wins over the one the field displayed, including a
+    // typed zero: only the fields left untouched take the fallback.
+    expect(rateOps(
+      'a/b',
+      { cacheMiss: '0' },
+      {},
+      undefined,
+      { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 },
+    )).toEqual([
+      { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 0 },
+      { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
+      { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
+    ])
+  })
+
+  it('writes only the typed figures where the row displayed no fallback', () => {
+    // A hand-typed route with no published price shows empty fields, so there is
+    // no figure to store for the ones left empty.
+    expect(rateOps('a/b', {}, { cacheHit: '0.075' }, undefined, undefined)).toEqual([
+      { op: 'set', path: ['models', 'a/b', 'offPeak', 'cacheHit'], value: 0.075 },
+    ])
+  })
+
   it('clears the stored second band when every off-peak field is emptied', () => {
     expect(rateOps(
       'a/b',
       { cacheHit: '0.15', cacheMiss: '4.5', output: '13.5' },
       {},
       { cacheHit: 1, cacheMiss: 2, output: 3, offPeak: { cacheHit: 0.5, cacheMiss: 1, output: 1.5 } },
+      undefined,
     )).toEqual([
       { op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 },
       { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
@@ -2075,24 +2145,24 @@ describe('rate write operations', () => {
 
   it('leaves a field the user never touched alone', () => {
     // Only typed figures are written: blanking a field is not a way to store a
-    // zero, and opening a row and saving it unchanged writes what it showed.
-    expect(rateOps('a/b', { cacheHit: '0.15' }, {}, { cacheHit: 1, cacheMiss: 2, output: 3 }))
+    // zero, and opening a stored row and saving it unchanged writes what it held.
+    expect(rateOps('a/b', { cacheHit: '0.15' }, {}, { cacheHit: 1, cacheMiss: 2, output: 3 }, undefined))
       .toEqual([{ op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 }])
-    expect(rateOps('a/b', { cacheHit: '0' }, {}, undefined))
+    expect(rateOps('a/b', { cacheHit: '0' }, {}, undefined, undefined))
       .toEqual([{ op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0 }])
   })
 
   it('reads an emptied row as its removal rather than a row of zeroes', () => {
-    expect(rateOps('a/b', {}, {}, undefined)).toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
-    expect(rateOps('a/b', {}, {}, { cacheHit: 1, cacheMiss: 2, output: 3 }))
+    expect(rateOps('a/b', {}, {}, undefined, undefined)).toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
+    expect(rateOps('a/b', {}, {}, { cacheHit: 1, cacheMiss: 2, output: 3 }, undefined))
       .toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
   })
 
   it('writes nothing at all for text that does not parse', () => {
     // A mistyped figure must not change the document, and in particular must
     // not delete the stored row behind it.
-    expect(rateOps('a/b', { cacheHit: 'four' }, {}, { cacheHit: 1, cacheMiss: 2, output: 3 })).toEqual([])
-    expect(rateOps('a/b', { cacheHit: 'four', cacheMiss: '4.5', output: '13.5' }, {}, undefined))
+    expect(rateOps('a/b', { cacheHit: 'four' }, {}, { cacheHit: 1, cacheMiss: 2, output: 3 }, undefined)).toEqual([])
+    expect(rateOps('a/b', { cacheHit: 'four', cacheMiss: '4.5', output: '13.5' }, {}, undefined, undefined))
       .toEqual([
         { op: 'set', path: ['models', 'a/b', 'cacheMiss'], value: 4.5 },
         { op: 'set', path: ['models', 'a/b', 'output'], value: 13.5 },
@@ -2100,11 +2170,11 @@ describe('rate write operations', () => {
   })
 
   it('trims the typed text before reading it', () => {
-    expect(rateOps('a/b', { cacheHit: ' 0.15 ' }, {}, undefined))
+    expect(rateOps('a/b', { cacheHit: ' 0.15 ' }, {}, undefined, undefined))
       .toEqual([{ op: 'set', path: ['models', 'a/b', 'cacheHit'], value: 0.15 }])
     // Whitespace alone is an empty field, so a form holding only spaces is the
     // same request as one holding nothing.
-    expect(rateOps('a/b', { cacheHit: '   ' }, {}, undefined)).toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
+    expect(rateOps('a/b', { cacheHit: '   ' }, {}, undefined, undefined)).toEqual([{ op: 'unset', path: ['models', 'a/b'] }])
   })
 })
 
