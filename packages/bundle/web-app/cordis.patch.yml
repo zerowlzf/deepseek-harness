@@ -309,9 +309,9 @@
     # account balance this row reads and caches. One dual-face row: the Host
     # half declares the live fields and owns the balance refresh chain, the
     # browser half renders the pills and the Billing configuration page on the
-    # Plugins page. The row id
-    # is the entry id the page and the Host address, and therefore the section
-    # a document written before the move to Profile configuration migrates into.
+    # Plugins page. The row id is the entry id the page and the Host address,
+    # and therefore the section a document written before the move to Profile
+    # configuration migrates into.
     - id: ui-billing
       name: '@deepseek-ai/dsh-client-ui-billing'
 
