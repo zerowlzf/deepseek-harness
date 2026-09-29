@@ -3,7 +3,7 @@
 > 本文由本 fork 维护者添加，只描述 **zerowlzf/deepseek-harness** 这个 fork 的同步与构建注意事项。
 > 它不是上游文档、不描述上游代码，也不改动任何上游文件。
 >
-> 记录时间：2026-09-29　核对基线：上游 dsh **0.2.0-rc.1**
+> 记录时间：2026-09-29　核对基线：上游 dsh **0.2.0-rc.2**（上一版为 0.2.0-rc.1）
 
 ## 1. fork 现状
 
@@ -11,13 +11,14 @@
 |---|---|
 | 远端（本 fork） | `https://github.com/zerowlzf/deepseek-harness` |
 | 上游 | `deepseek-ai/deepseek-harness` |
-| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.0-rc.1**（此前为 0.1.7-alpha.2） |
+| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.0-rc.2**（此前为 0.2.0-rc.1，再往前为 0.1.7-alpha.2） |
 
-fork 自有提交（截至 2026-09-29 共 17 个）主要包含：
+fork 自有提交（截至 2026-09-29 共 18 个）主要包含：
 
-- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随 0.2.0-rc.1 基线
+- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随 0.2.0-rc.1 / 0.2.0-rc.2 基线
+- `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
 - `session-format` 历史会话兼容补丁（permission/preset 的 origin 成员、subagent/descriptor 版本 2）
-- Windows 子进程窗口隐藏（`windowsHide`）
+- Windows 子进程窗口隐藏（`windowsHide`，上游已覆盖 `win32-process`，本地只剩 `bundle/web-app` 与 `sdk/client` 两处 spawn）
 - `tool-cordis` 输入被字符串化时的重解析防御
 
 ### ⚠️ master 会被强推重写
@@ -41,6 +42,19 @@ git branch --set-upstream-to=zerowlzf/master master
 - **必须给足超时**：跨大基线切换涉及约 2400 个文件改写，默认超时（120s）会被打断，建议 ≥600s。
 - **中断善后**：删 `.git/index.lock`，确认工作区无本地改动后 `git clean -fd` 清掉残留的未跟踪文件，再重试切换。
 - 切换前建议用 `git cherry` / patch-id 逐一核实旧分支上的本地补丁是"已被远端包含"还是"需要保留"，再决定是否整体切换。
+
+### 本仓库的做法：rebase 到新 tag，而不是整体切换
+
+本机的 checkout 就是这些补丁的产地，升级走 rebase，每条本地提交的历史都保留：
+
+```sh
+git fetch origin --tags
+git merge --ff-only fork/master                    # 先并入 fork 端新增的文档提交
+git rebase --onto dsh-v<新版本> dsh-v<旧版本> master
+pnpm install                                       # 只有依赖真的变了才需要
+```
+
+实测 0.2.0-rc.1 → 0.2.0-rc.2（本地 18 个提交、上游 1022 个文件）：rebase 零冲突；`pnpm install` 14.8 s 完成；16 个官方生成器重跑后与工作区零差异，说明 rebase 后目录已自洽。rebase 之后本地提交都是新哈希，推送仍需 `--force-with-lease`。
 
 ## 3. 构建前必做：清掉旧基线产物
 
@@ -86,8 +100,21 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 构建产物检查点：`apps/web/dist`（前端静态资源）、`apps/desktop/lib/main.js`、各包 `lib/`。
 - 定向测试：`npx vitest run <目录或文件>`。本次变更区域实测：`session-format` 634 个用例全通过、`ui-billing` 169 个用例全通过。
 
-## 7. 本次验证记录（2026-09-29）
+## 7. 验证记录
+
+### 基线 0.2.0-rc.1（2026-09-29，当时的构建环境）
 
 - `pnpm install`：锁文件一致、供应链策略检查通过。
 - 全量构建（`npm run build`）：成功；`apps/web/dist` 196 个产物文件、`apps/desktop/lib/main.js` 468 KB、321 个包/应用输出目录重建。
 - `git status`：干净（源码零改动，本次只新增本文档）。
+
+### 基线 0.2.0-rc.2（2026-09-29，Windows + pwsh 7 + node 24）
+
+- 升级路径：`git merge --ff-only fork/master` + `git rebase --onto dsh-v0.2.0-rc.2 4878cdabd8 master`，18 个本地提交全部重放，**零冲突**。
+- `pnpm install`：14.8 s，`Packages: +35 -45`（pi-ai 0.85.1 → 0.87.1，另有新增 workspace 包），锁文件与供应链策略校验通过；本次**未**触发坑一。
+- 生成器：16 个官方生成器全部重跑，输出与工作区**零差异**。其中 `gen-doc-graphs` 在默认堆下 OOM（exit 134），需 `node --max-old-space-size=8192 --import tsx/esm scripts/gen-doc-graphs.ts`（本机物理内存 6 GB，构建期间尤其紧张）。
+- 门禁：`pnpm run typecheck`（含 `build:lib:host`）通过；`lint:contracts-ready` 5120 文件 0 警告；`test:docs` 21 项全过；`verify-translation-pairing` 1160 对一致。
+- 定向测试：`session-format-v0-to-v1` / `v2-to-v3`、`tool-cordis`、`bundle/web-app`、`sdk/client` 共 758 用例全过；`ui-billing` + `ui-chat` 共 790 用例全过。
+- `test:gui`：602/604 文件通过；3 个失败都是 5 s 负载超时（`binary-rpc.host.spec.ts` ×2、`document-preview-license-bundle.client.spec.ts` ×1），单跑均通过。后者在 `pnpm exec vitest` 下还会因缺少 `npm_execpath` 直接报错，把 `npm_execpath` 指向 pnpm 的 `bin/pnpm.cjs` 后 2.3 s 通过。
+- 清理与重建：`pnpm run clean`（删除 334 条路径）→ 手工删 `apps/web/dist` → `pnpm run build`，日志留在仓库外的 `DSH/tmp/clean-build-020-rc2.log`。
+- 与用户环境相关的一条：`llm-pi-ai` 的 `src/config.ts` 在 rc.1 → rc.2 之间**未改动**，因此 profile patch 里自定义 provider / 模型 / compat 声明仍然有效；上游内置目录删掉的旧模型 ID 不影响自定义模型。
