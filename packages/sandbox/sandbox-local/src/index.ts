@@ -108,6 +108,7 @@ function defaultProbeWindowsAcl(runnerInvocation: string[], timeoutMs: number): 
   ], {
     timeout: timeoutMs,
     stdio: 'ignore',
+    windowsHide: true,
   })
   return probe.status === 0
 }

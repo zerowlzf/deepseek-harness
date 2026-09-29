@@ -455,6 +455,7 @@ function validatePythonBin(bin: string): void {
     ], {
       encoding: 'utf8',
       env: pythonEnvironment(),
+      windowsHide: true,
       timeout: PYTHON_PROBE_TIMEOUT_MS,
       // The configured executable is outside our control. Force-kill it at the
       // deadline so a wrapper that ignores SIGTERM cannot block plugin load.
@@ -1164,6 +1165,7 @@ export class PythonPtcRuntime extends PtcRuntime {
     try {
       child = spawn(argv[0], argv.slice(1), {
         cwd: request.cwd,
+        windowsHide: true,
         env: pythonEnvironment(),
         detached: true, // Own the process group used by termination and exit observation.
         stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
