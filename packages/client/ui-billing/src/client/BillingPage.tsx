@@ -95,7 +95,7 @@ function defaultText(route: string, band: PriceWindow, field: Field, published: 
  * callbacks only, and the rates it edits travel back through `form.mutate`.
  */
 export type BillingPageProps =
-  & PropsRuntime<'plugins.row.config'>
+  & PropsRuntime<'plugins.item'>
   & InjectFace<BillingPageInjected>
   & PropsLocale<typeof LOCALE_NS>
 
