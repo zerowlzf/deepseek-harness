@@ -1149,7 +1149,6 @@ describe('settings page', () => {
     // user left alone.
     expect(mutate).toHaveBeenCalledWith(
       [{ op: 'set', path: ['models', 'deepseek-official/deepseek-v4-flash', 'offPeak', 'cacheHit'], value: 0.03 }],
-      1,
     )
   })
 
@@ -1217,7 +1216,29 @@ describe('settings page', () => {
         { op: 'set', path: ['models', 'bai/glm-5.3-flash', 'cacheMiss'], value: 4.5 },
         { op: 'set', path: ['models', 'bai/glm-5.3-flash', 'output'], value: 13.5 },
       ],
-      1,
+    )
+  })
+
+  it('writes without fencing at the revision the page rendered at', async () => {
+    const stub = stubConfigForm<BillingSettings>()
+    stub.publish(snapshot())
+    const face = billingFace(stub, contextDouble(remoteDouble(), baiDirectory()))
+    const { mutate } = renderPage(stub, face)
+    await screen.findByText('BAI')
+    fireEvent.click(screen.getByLabelText('Edit rates for bai'))
+    fireEvent.change(screen.getByLabelText('bai/glm-5.3-flash Cache hit'), { target: { value: '0.15' } })
+
+    // The Host commits these same settings on its own schedule: the balance and
+    // price chains both write through `ctx.settings.update`, which moves the
+    // entry's revision between the render that staged the draft and the click
+    // that saves it. The page fences at no revision of its own, so the write
+    // this save makes is the one the form's own latest revision accepts.
+    await act(async () => { stub.publish(snapshot({ revision: 2 })) })
+    fireEvent.click(screen.getAllByText('Save')[0] as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    expect(mutate).toHaveBeenCalledWith(
+      [{ op: 'set', path: ['models', 'bai/glm-5.3-flash', 'cacheHit'], value: 0.15 }],
     )
   })
 
@@ -1239,7 +1260,7 @@ describe('settings page', () => {
     fireEvent.click(screen.getByText('Clear'))
     fireEvent.click(screen.getByText('Save'))
     await act(async () => { await Promise.resolve() })
-    expect(mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['models', 'bai/glm-5.3-flash'] }], 1)
+    expect(mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['models', 'bai/glm-5.3-flash'] }])
 
     // A save the Host refuses says so and keeps the drafts, so the user can try again.
     mutate.mockResolvedValueOnce(false)
