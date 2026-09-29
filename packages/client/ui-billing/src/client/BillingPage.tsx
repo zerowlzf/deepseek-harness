@@ -243,7 +243,10 @@ export function BillingPage({
     setSaving(true)
     setFailed(false)
     try {
-      const accepted = await form.mutate([...ops], form.state.revision)
+      // No fence on this write: the Host commits these same settings on its own
+      // schedule, so a revision read while rendering would refuse a save made
+      // after any of those writes. The form resolves the revision to fence at.
+      const accepted = await form.mutate([...ops])
       if (accepted) discard()
       else setFailed(true)
     } catch {
@@ -313,7 +316,7 @@ export function BillingPage({
     setFailed(false)
     try {
       const accepted = await form.mutate(
-        [{ op: 'set', path: ['officialRequest'], value: Date.now() }], form.state.revision,
+        [{ op: 'set', path: ['officialRequest'], value: Date.now() }],
       )
       // A refused write answers rather than rejecting, and it says so here: a
       // request that never reached the Host would otherwise look asked-for.
