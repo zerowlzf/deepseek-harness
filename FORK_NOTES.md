@@ -13,7 +13,7 @@
 | 上游 | `deepseek-ai/deepseek-harness` |
 | `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.0-rc.2**（此前为 0.2.0-rc.1，再往前为 0.1.7-alpha.2） |
 
-fork 自有提交（截至 2026-09-29 共 18 个）主要包含：
+fork 自有提交（截至 2026-09-29 共 21 个：随新基线重放 18 个，本轮新增 3 个 —— 版本跟随、本文档更新与补录）主要包含：
 
 - 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随 0.2.0-rc.1 / 0.2.0-rc.2 基线
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
@@ -116,5 +116,8 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 门禁：`pnpm run typecheck`（含 `build:lib:host`）通过；`lint:contracts-ready` 5120 文件 0 警告；`test:docs` 21 项全过；`verify-translation-pairing` 1160 对一致。
 - 定向测试：`session-format-v0-to-v1` / `v2-to-v3`、`tool-cordis`、`bundle/web-app`、`sdk/client` 共 758 用例全过；`ui-billing` + `ui-chat` 共 790 用例全过。
 - `test:gui`：602/604 文件通过；3 个失败都是 5 s 负载超时（`binary-rpc.host.spec.ts` ×2、`document-preview-license-bundle.client.spec.ts` ×1），单跑均通过。后者在 `pnpm exec vitest` 下还会因缺少 `npm_execpath` 直接报错，把 `npm_execpath` 指向 pnpm 的 `bin/pnpm.cjs` 后 2.3 s 通过。
-- 清理与重建：`pnpm run clean`（删除 334 条路径）→ 手工删 `apps/web/dist` → `pnpm run build`，日志留在仓库外的 `DSH/tmp/clean-build-020-rc2.log`。
+- 清理与重建：`pnpm run clean`（删除 334 条路径）→ 手工删 `apps/web/dist` → `pnpm run build`，日志留在仓库外的 `DSH/tmp/clean-build-020-rc2.log`。构建记录 `.dsh-build/client-build-environment.json`：`DSH_CLIENT_COMMIT_HASH=c2f079c`、`DSH_CLIENT_VERSION=0.2.0-rc.2`、349 个客户端产物、含摘要。
+- 产物核验：`apps/web/dist` 196 个文件；`ui-billing/lib/client.js` 与 `ui-chat/lib/client.js` 里都能搜到 `conversation.chat.turnEndInfo`；`verify-built-package-invariants` 38 个 companion 通过；用**刚构建的** `session-format-catalog/lib/index.js` 跑全量历史会话恢复扫描：146 个工件 146 恢复、0 拒绝（v0=82、v2=31、v3=23、v4=10）。
+- **`test:snapshot` 在 Windows 上不可用（不是代码问题）**：本机实测 139 失败 / 27 通过，原因全部是平台与环境差异 —— headless profile 在 win32 上禁用 `tool-bash`（报 `unknown tool "bash"`、`tools.bash is not a function`）；部分场景走 `deepseek-official` 路由需要 key；运行时上下文快照按 `workspace-write` + `approval: ask` 录制，而本会话是 `danger-full-access` + 关闭审批；录制环境没有 Windows 专属的 `diagnose-windows-sandbox-acl` skill，本机 skill 目录多一条，system-reminder 随之不同。上游自己也把该门禁的所有权放在 macOS/Linux CI（`check:windows-wine` 只在诊断已知 Windows 失败时用），所以本机跳过这一个门禁。
+- `DSH_SNAPSHOT=replay pnpm run test:web` 本轮未跑：本机没有 Playwright 浏览器缓存（`%LOCALAPPDATA%\ms-playwright` 不存在），且该命令会连带全量 `npm run build`；需要浏览器级烟测时先 `pnpm exec playwright install chromium`。
 - 与用户环境相关的一条：`llm-pi-ai` 的 `src/config.ts` 在 rc.1 → rc.2 之间**未改动**，因此 profile patch 里自定义 provider / 模型 / compat 声明仍然有效；上游内置目录删掉的旧模型 ID 不影响自定义模型。
