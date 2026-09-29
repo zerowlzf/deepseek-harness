@@ -1650,6 +1650,13 @@ describe('built-in conversation node Definitions', () => {
       reasoningTokens: 1,
       routes: [{ provider: 'fake', model: 'fake' }],
     })
+
+    // A per-Turn cost reading prices each attempt apart by the route its durable
+    // message was served on, and reaches that route through the finalized node:
+    // this package records the message source on the node it settles, which is
+    // the only producer of `providerMetadata` a Consumer can read.
+    const settled = (node(snapshot(value), 'assistant-step')?.data as AssistantChatData).finalNode
+    expect(settled?.providerMetadata).toEqual({ provider: 'fake', model: 'fake' })
   })
 
   it('replays inbox predecessors after prepend and reclassifies the dependent message as steering', () => {
