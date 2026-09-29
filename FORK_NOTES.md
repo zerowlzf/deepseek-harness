@@ -60,7 +60,8 @@ pnpm install                                       # 只有依赖真的变了才
 
 - `lib/`、`apps/web/dist` 等构建产物都在 `.gitignore` 里（且不被 git 跟踪），所以 `git clean` 清不掉、`checkout` 也不会覆盖 —— 跨基线切换后必然残留上一个基线的产物（实测 `packages/client/ui-billing/lib` 就残留过旧基线产物）。
 - 官方 `npm run clean` 只清 TypeScript 的 outDir / 已知输出根，**不包含 Vite 的 `apps/web/dist`**，需手工删除。
-- 建议顺序：`npm run clean` → 手工清理残留 `dist` → 全量构建。
+- 还有一类它够不到的残留：曾经由某个 tsconfig 产出、但该工程后来被上游删掉的根级输出（实测 `lib/desktop-keyboard-test-types`，0.1.7 基线的 desktop 键盘测试工程所出）。遍历基于 tsconfig 引用图，工程没了就永不入列，只能手工删。
+- 建议顺序：`npm run clean` → 手工清理残留 `dist`（与本条上一行点名的根级输出）→ 全量构建。
 
 ## 4. 坑一：pnpm 11 "跳装" 导致依赖链接残缺
 
