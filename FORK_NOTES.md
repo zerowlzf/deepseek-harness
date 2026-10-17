@@ -13,9 +13,9 @@
 | 上游 | `deepseek-ai/deepseek-harness` |
 | `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.1-rc.2**（此前为 0.2.1-rc.1 → 0.2.1-alpha.5 → 0.2.0-rc.2 → 0.2.0-rc.1 → 0.1.7-alpha.2） |
 
-fork 自有提交（截至 2026-10-17 共 46 个：rc.2 轻量轮随新基线重放 43 个，本轮新增 3 个 —— WebRuntime 活引用适配、计费版本跟随、本文档更新）主要包含：
+fork 自有提交（截至 2026-10-17 共 50 个：rc.2 轻量轮随新基线重放 43 个；rc.2 同步轮新增 3 个 —— WebRuntime 活引用适配、计费版本跟随、本记录更新；复核轮再新增 4 个 —— tool-cordis 再解析收紧、v1→v2 保留链测试、本记录勘误、配对重录与遗漏门禁补查）主要包含：
 
-- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 四个落点：Plugins 页行配置、composer 胶囊、`turnEndInfo` 逐轮读数、turnTail 同行读数）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.2；上游没有该路径，是本地自有包）
+- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 四个落点：Plugins 页行配置、composer 胶囊、`turnEndInfo` 每轮读数、`turnTail` 兜底读数（没有操作行的轮次））的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.2；上游没有该路径，是本地自有包）
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
 - `session-format` 历史会话兼容补丁（permission/preset 的 origin 成员、subagent/descriptor 版本 2）
 - Windows 子进程窗口隐藏（`windowsHide`：上游自带 `subprocess-local` 等大部分 spawn 点的覆盖且仍在自修，本地补丁只剩它未覆盖的 5 个文件共 7 处 —— `bundle/web-app`、`sdk/client`、`ptc-runtime-python` ×2、`ssh` ×2、`sandbox-local`）
@@ -195,4 +195,5 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 源码重启 + 产品面探针：boot 70 条目、billing 行在 boot 中（inject=10）；`session/list` 200、80 项、15 个根会话；v0–v4 根/子会话若干例历史读取全过（v0 首条为 `permission/preset`，即 fork 的 origin 补丁在真实读取路径上生效）；census 无孤儿（3 个归档候选）；无头 Edge 探针：composer 胶囊 `¥156.31 ¥9.99`、`本会话 ¥156.31`、`DeepSeek 账户余额 ¥9.99`、turn 读数落点 2 处、页面零异常零 console 错误。两个探针的 token 改为 argv 优先（源码模式下与 launcher settings 的 token 不同）。
 - 周边仓库：启动器 `test-race.js` 20 通过、`test-webview.js` 7 通过（本机实测），已在 `ff36264` 与远端同步；ui-billing 独立仓 `sync.mjs` 同步到 rc.2（含 `host.host.spec.ts` 的 WebRuntime 活引用适配）、`--check` 零漂移、CONTRIBUTING 基线句更新，提交 `6977216` + tag `v0.2.1-rc.2`。
 - 补丁族复核与修正（本轮末，逐族 + 上游对照）：计费接线、`turnEndInfo`+`providerMetadata`、session-format origin/descriptor、windowsHide、生成物与中英对称均成立；上游 rc.2 未静默抵消任何补丁族；v1 文件里的 descriptor v2 目前没有写入者（记录在案）。据此修正四处：① `tool-cordis` 再解析按 `list()` 发布的 `inputSchema` 判定，声明 string 输入的方法收到的 JSON 形文本不再被再解析（README 与注释同步收紧，新增钉住测试；该族定向 802 项全过，含四代 session 迁移）；② v1→v2 补 `permission/preset` 保留链测试（防未来迁移重声明处置表时丢掉 v0 处置表的 spread）；③ `migration.ts` 的 v2→3 注释收窄到「released v0 构建至 0.1.1-rc.2 写出 v2」这一已验证范围；④ 文档勘误：用例数 169→173、计费插件改述为四个落点、client 组 README 补 `ui-billing` 行（中英）。
+- 补漏门禁与重清（同夜续）：复核轮初查漏跑 `verify-translation-pairing`，补跑发现 2 对失配（`tool-cordis/README` 仅英文侧随 ① 更新、`client/README` 双侧补行未重录）——中文侧随动、两对 `--write` 重录后，范围检查与全量语料复跑全绿；另按官方 `clean`（361 路径）+ 手工残留（`apps/web/dist` 156 文件、空根级 `lib/`）重清，健康复扫 0 残留后全量重建（9/9 门禁、327 产物），运行时探针（check-runtime 与无头 Edge 计费探针）复跑全绿。
 - 未跑（沿用既往取舍）：`test:gui` 全量、`test:docs` 全量（本文档以 `verify-md-wrap` 复核）、`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。

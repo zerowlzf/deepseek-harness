@@ -90,7 +90,7 @@ it('keeps a scalar parse as the text the model sent', async () => {
   expect(seen).toEqual(['5'])
 })
 
-it('keeps JSON-shaped text aimed at a method declaring a string input', async () => {
+it('keeps JSON-shaped text sent to a method declaring a string input', async () => {
   const { seen, call } = await fixture()
   const result = await call('echoText', '{"value":"typed"}')
   expect(result.isError).toBe(false)
