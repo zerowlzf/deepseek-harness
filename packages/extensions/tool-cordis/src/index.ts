@@ -1,6 +1,7 @@
 /** Read-only Host and Client runtime API discovery for plugin development. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { CordisInspectPlatform, CordisInspectProviderView } from '@deepseek-ai/dsh-cordis-host-runner'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -12,6 +13,27 @@ export const inject = ['tools', 'cordisInspect']
 function requireAgent(exec: ToolExecution): Agent {
   if (exec.agent === undefined) throw new Error('Cordis inspection requires an Agent-backed session')
   return exec.agent
+}
+
+/**
+ * Report whether the published directory shows one method declaring a bare
+ * string input, whose argument is the text itself.
+ * @param providers - Complete provider directory from the inspect registry.
+ * @param platform - Requested runtime platform.
+ * @param providerId - Requested provider id.
+ * @param methodName - Requested method name.
+ * @returns True only when the directory publishes `{ "type": "string" }` for that method.
+ */
+function declaresStringInput(
+  providers: readonly CordisInspectProviderView[],
+  platform: CordisInspectPlatform,
+  providerId: string,
+  methodName: string,
+): boolean {
+  const schema = providers
+    .find(candidate => candidate.platform === platform && candidate.id === providerId)
+    ?.methods.find(candidate => candidate.name === methodName)?.inputSchema
+  return typeof schema === 'object' && schema !== null && !Array.isArray(schema) && schema['type'] === 'string'
 }
 
 /** Register read-only runtime inspection tools over the Host providers that
@@ -60,12 +82,12 @@ export function apply(ctx: Context): void {
     async execute(args, exec) {
       // `type: 'json'` projects without a wire type, and some providers then
       // serialize the nested argument as a JSON string before validation.
-      // Re-parse at this boundary, adopting only a structured result: a method
-      // that declares a string input keeps the text the model sent instead of
-      // having it read as a number or a boolean. A malformed string falls
-      // through to the provider's own schema error unchanged.
+      // Re-parse at this boundary, adopting only a structured result and never
+      // over a method whose published schema declares a string input, where the
+      // text is the argument itself. A malformed string falls through to the
+      // provider's own schema error unchanged.
       let input = args.input
-      if (typeof input === 'string') {
+      if (typeof input === 'string' && !declaresStringInput(ctx.cordisInspect.list(), args.platform, args.provider, args.method)) {
         try {
           const reparsed = JSON.parse(input) as JsonValue
           if (reparsed !== null && typeof reparsed === 'object') input = reparsed

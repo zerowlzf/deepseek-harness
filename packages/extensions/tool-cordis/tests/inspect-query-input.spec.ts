@@ -1,9 +1,9 @@
 /**
  * The query tool normalizes one boundary: a provider that serialized the nested
  * `input` argument as JSON text still reaches the provider's own schema, and a
- * scalar parse is never adopted in place of the text the model sent. Both are
- * local-patch behavior, so this spec is what keeps a baseline replay from
- * dropping them silently.
+ * method declaring a bare string input always receives the text it was sent,
+ * scalar or JSON-shaped. Both are local-patch behavior, so this spec is what
+ * keeps a baseline replay from dropping them silently.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { CordisInspectRegistryService } from '@deepseek-ai/dsh-cordis-host-runner'
@@ -88,6 +88,13 @@ it('keeps a scalar parse as the text the model sent', async () => {
   const result = await call('echoText', '5')
   expect(result.isError).toBe(false)
   expect(seen).toEqual(['5'])
+})
+
+it('keeps JSON-shaped text aimed at a method declaring a string input', async () => {
+  const { seen, call } = await fixture()
+  const result = await call('echoText', '{"value":"typed"}')
+  expect(result.isError).toBe(false)
+  expect(seen).toEqual(['{"value":"typed"}'])
 })
 
 it('passes an object input through unchanged', async () => {
