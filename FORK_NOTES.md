@@ -3,7 +3,7 @@
 > 本文由本 fork 维护者添加，只描述 **zerowlzf/deepseek-harness** 这个 fork 的同步与构建注意事项。
 > 它不是上游文档、不描述上游代码，也不改动任何上游文件。
 >
-> 记录时间：2026-10-17　核对基线：上游 dsh **0.2.1-alpha.5**（上一版为 0.2.0-rc.2）
+> 记录时间：2026-10-17　核对基线：上游 dsh **0.2.1-rc.1**（上一版为 0.2.1-alpha.5）
 
 ## 1. fork 现状
 
@@ -11,11 +11,11 @@
 |---|---|
 | 远端（本 fork） | `https://github.com/zerowlzf/deepseek-harness` |
 | 上游 | `deepseek-ai/deepseek-harness` |
-| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.1-alpha.5**（此前为 0.2.0-rc.2 → 0.2.0-rc.1 → 0.1.7-alpha.2） |
+| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.1-rc.1**（此前为 0.2.1-alpha.5 → 0.2.0-rc.2 → 0.2.0-rc.1 → 0.1.7-alpha.2） |
 
-fork 自有提交（截至 2026-10-17 共 39 个：随新基线重放 34 个，本轮新增 5 个 —— 计费适配（含版本跟随与夹具断言清理）、tool-cordis 类型收紧、生成物重跑、说明链接与配对、本文档更新）主要包含：
+fork 自有提交（截至 2026-10-17 共 41 个：rc.1 轻量轮随新基线重放 39 个，本轮新增 2 个 —— 计费版本跟随、本文档更新）主要包含：
 
-- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-alpha.5）
+- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.1；上游没有该路径，是本地自有包）
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
 - `session-format` 历史会话兼容补丁（permission/preset 的 origin 成员、subagent/descriptor 版本 2）
 - Windows 子进程窗口隐藏（`windowsHide`，上游已覆盖 `win32-process`，本地只剩 `bundle/web-app` 与 `sdk/client` 两处 spawn）
@@ -57,6 +57,8 @@ pnpm install                                       # 只有依赖真的变了才
 实测 0.2.0-rc.1 → 0.2.0-rc.2（本地 18 个提交、上游 1022 个文件）：rebase 零冲突；`pnpm install` 14.8 s 完成；16 个官方生成器重跑后与工作区零差异，说明 rebase 后目录已自洽。rebase 之后本地提交都是新哈希，推送仍需 `--force-with-lease`。
 
 0.2.0-rc.2 → 0.2.1-alpha.5（本地 34 个提交、上游 1912 个提交、约 8361 个文件）：冲突集中在几个生成物与既定补丁（slot 目录、slots 文档双语、事件图文档双语、ptc-runtime 的 windowsHide 处），按「生成物重跑、补丁语义不动」处理完毕；18 个带 `--check` 的官方生成器重跑后零差异。跨的基线越大，「生成器全绿」这个信号越重要 —— 它是目录自洽的最快判据。
+
+0.2.1-alpha.5 → 0.2.1-rc.1（本地 39 个提交、上游 4 个提交且全为发布登记：355 个 package.json 各 ±1 行版本号，无代码变更、无变更日志）：rebase 零冲突；lockfile 零变化（翻新全在 workspace 内部版本，不触及依赖图）；计费插件是本地自有包（上游没有该路径），版本跟随单独提交。轻量轮的取舍：生成器 spot check + typecheck + 单包样张 + 直接重建（跳过全量清理与全量 test:gui），依据是「距上次全量清理仅数小时且 src 零字节变化」。
 
 ## 3. 构建前必做：清掉旧基线产物
 
@@ -110,6 +112,7 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 本仓库有 14 条 git 符号链接条目（mode 120000）。Windows 上 `core.symlinks=false` 会把它们落成普通文本文件，且本机无创建符号链接的权限（实测 `symlinkSync` 报 EPERM）。两个官方检查因此固定红：`verify-cordis-config`（读 `apps/cli/tests/profiles/acp/cordis.yml` 时报「root must be a Loader entry array」）与 `verify-node-next-types`（脚本自己要建符号链接；它只回传子进程输出，失败时表现为空输出）。有符号链接权限的环境不受影响；不要为它们打 fork 补丁。
 - `rescope-vendor:check` 首次运行报 19 个文件残留，逐项核对**全部是上游自身的内容**：18 个文件与 `dsh-v0.2.1-alpha.5` 逐字节一致；剩下 `packages/bundle/web-app/cordis.patch.yml` 虽被 fork 修改过，命中的却是上游注释里一个反引号包裹的旧包名，fork 的新增行不含任何待改写记号。不要动上游文件，也不要改 rescope 脚本或映射表。
 - `hygiene` 是全仓库巡检：首次运行（0.2.1-alpha.5 轮）即翻出 8 处测试夹具里的 `as unknown`（fork 自有、在基线之外，已按 no-unknown-casts 规则修复）。以后每轮同步至少跑一次 `pnpm run hygiene`，尽早发现 fork 自身的门禁欠账，别等 CI。
+- 备份分支的指针要对准「真正的旧 tip」：0.2.1-alpha.5 轮的备份建在 reset 之前，但当时本地 `master` 停在更早的 rc.1 轮 tip（18 个提交），真正的全量 pre-rebase 链条（rc.2 + 34 个提交）在 fork 远端上。体检时已把备份分支改名为如实的内容名，并新建一个分支钉住全量链条 —— 否则强推之后远端引用移走，pre-rebase 状态只剩 reflog，90 天后随 GC 消失。
 
 ## 7. 验证记录
 
@@ -155,3 +158,13 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - `test:gui`（基于新产物）：647 个文件、10902 项中仅 1 文件 1 项失败 —— `present-open.host.spec.ts` 的符号链接 EPERM（§6 环境限制）；§6 最后一条所述 `document-preview-license-bundle` 样张在新产物上通过。
 - 会话恢复扫描（用本轮构建的 catalog）：`~/.dsh/sessions` 53 个工件 51 恢复 2 拒绝（均为 v3 中断录制中的未闭合 tool call，命中上游既有校验，与 fork 无关）；分布 v0=25、v2=11、v3=15、v4=2。
 - 未跑（沿用上一节原因）：`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器缓存）。
+
+### 基线 0.2.1-rc.1（2026-10-17 下午，轻量轮：先全面体检后同步）
+
+- 触发：体检时 fetch 发现上游当日新发 `dsh-v0.2.1-rc.1`，比 alpha.5 新 4 个提交，全为发布登记（355 个 package.json 各 ±1 行版本号，无代码、无变更日志）。
+- 备份修正（体检发现）：`backup/master-pre-0.2.1-alpha.5-20261017` 原指向 rc.1 轮 tip，与名字不符；已改名 `backup/master-0.2.0-rc.1-tip-20261017`，并把该名字新建到真正的 pre-rebase 全量链条上（rc.2 + 34，即当时的 fork 远端 tip，§6 有教训记录）。
+- rebase：39 个本地提交零冲突重放到 rc.1；lockfile 零变化；计费插件版本跟随（本地自有包，上游没有该路径）。
+- 门禁：`typecheck` 5/5；`ui-billing` 173 项全过；`verify-client-catalog` 零漂移（上游 slots 未变）。
+- 重建：直接 `pnpm run build`（未重跑 clean 与手工清理 —— 距当日上午的全量清理仅数小时，且此后 src 零字节变化，只有测试夹具、文档与版本串改动）：9/9 门禁、58.27 s（缓存热）、325 个客户端产物。构建记录 `DSH_CLIENT_VERSION=0.2.1-rc.1`、`DSH_CLIENT_GIT_DIRTY=true`（构建在提交前进行，与 alpha.5 轮同理）。
+- 产物核验：`apps/web/dist` 156 个文件；`conversation.chat.turnEndInfo` 双 bundle 在场；`apps/desktop/lib/main.js` 516716 字节（比 alpha.5 轮恰好短 3 字节，即版本串长度差）。
+- 未跑：`test:gui` 全量（rc.1 无功能变更，alpha.5 轮已全量验证过同构产物）、`lint:contracts-ready`（版本串不进 lint 面）、`test:docs`（本轮笔记无变更；文档门禁以 `verify-md-wrap` 与 `verify-repository-references` 复核本文档）。
