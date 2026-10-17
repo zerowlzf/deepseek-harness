@@ -120,11 +120,10 @@ function normalizeLegacyCompactionType(event: SessionFormatEvent): SessionFormat
 }
 
 /**
- * Bump the version 2 descriptor that every released v0 build wrote, from the
- * first 0.0.1 release candidate through 0.1.1-rc.2. Version 3 added only the
- * optional `agentReasoningEffort` member, so a version 2 payload keeps its
- * meaning; the never-released version 1 differs in structure and stays refused
- * with every other version.
+ * Bump the version 2 descriptor that released v0 builds wrote through
+ * 0.1.1-rc.2. Version 3 added only the optional `agentReasoningEffort` member,
+ * so a version 2 payload keeps its meaning; the never-released version 1
+ * differs in structure and stays refused with every other version.
  * @param event - normalized released-v0 event.
  * @returns the event with a current descriptor version, or unchanged.
  */

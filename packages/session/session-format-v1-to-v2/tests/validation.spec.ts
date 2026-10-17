@@ -155,6 +155,14 @@ describe('released v2 event envelopes and payloads', () => {
     ])) }).not.toThrow()
   })
 
+  it('admits the inherited released permission/preset origin member', () => {
+    expect(RELEASED_V2_EVENT_TYPES).toContain('permission/preset')
+    const selected = artifact([
+      event('permission/preset', 0, { preset: 'default', origin: 'selection' }),
+    ])
+    expect(() => { assertReleasedV2Artifact(selected) }).not.toThrow()
+  })
+
   it('preserves the referenced Session generation across containing-log migration', () => {
     const containing = (capturedFormatVersion: number): SessionFormatArtifact => artifact([
       event('user/message', 0, {
