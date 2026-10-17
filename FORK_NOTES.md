@@ -207,3 +207,11 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 行数：`README.md` / `README.zh.md` 190 → 59 行；新增 `docs/README.md` / `docs/README.zh.md` 各 160 行。
 - 周边仓库（同轮，已推送）：standalone `dsh-ui-billing` `d5c4b0e`（README 对随精简、`sync.mjs` 的 `PACKAGE_PATHS` 纳入 `docs`、CONTRIBUTING 路径清单更新；`--from-dsh` 后 `--check` 零漂移）；启动器 `dsh-launcher` `e92f7a5`（README 168 → 62 行，长文移入 `docs/maintenance.md` 137 行：与官方桌面端的关系、全部基线吸收记录、上游契约全文、功能 / 配置 / 日志 / 图标细节）。
 - 未跑（沿用取舍）：`test:gui` 全量、`doc-sync` 全量、`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。
+
+### 基线 0.2.1-rc.2（2026-10-18 续：两轴评审修整）
+
+- 触发：上一节提交后对三个仓做两轴评审（Standards / Spec，各一个并行子代理）。结论：Standards 5 条（1 条轻度成文违规——主 README 与 docs 的 Use this package 段近乎逐字重复 311/312 字符；4 条判断题）；Spec 4 条（2 个 ToC 条目被删非移；FORK_NOTES 属报告产物；发布载荷缺 `docs/`；Summary 恰 100 词零余量）。
+- 修复：①docs/README 对的 Use this package 段改为指向主 README 对应节的入口句（中英同步，去重）；②docs 的 known-limitations 锚点前移、去掉多余空行（五个锚点全部前置）；③主 README 对补回 Understand the implementation / Further Exploration 两条 ToC（指向 docs 对应节）；④`package.json` `files` 追加 `docs`（npm 载荷此前 25 文件不含细节文档，包内 README 链接会断；修后 28 文件、82.6 kB）；⑤Summary 100 → 97 词留余量。
+- 复核：`verify-translation-pairing` 范围 ×2 与全量 1017 对全绿；`verify-md-links` 2012、`verify-md-wrap` 2052、summaries 396、model-experience 343、limitations 343、`doc-standard.spec` 22/22、`pnpm run publint` 全仓 EXIT=0、`npm pack --dry-run` 确认 docs 三文件在清单内；`test:docs` 20/21（唯一失败仍为已知 uv.lock 误报）。
+- 未修（判断 / 设计使然）：standalone 快照内 `../../../llm|settings|web/...` 跨包链接指出仓根（旧 README 同类问题浅一级；快照字节一致规则不允许本地改写）；启动器 README 与 `docs/maintenance.md` 的分工（保留「以本文件为准」的优先级声明）；`docs/README.md` 的 `kind` 仍为 `package-reference`（门禁只扫 `packages/*/*/README.md`，嵌套 docs 不在范围）。
+- 提交：standalone `d7c3f75`（`--from-dsh` 后 `--check` 零漂移）；启动器本轮无改动。
