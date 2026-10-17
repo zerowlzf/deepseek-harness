@@ -3,7 +3,7 @@
 > 本文由本 fork 维护者添加，只描述 **zerowlzf/deepseek-harness** 这个 fork 的同步与构建注意事项。
 > 它不是上游文档、不描述上游代码，也不改动任何上游文件。
 >
-> 记录时间：2026-10-17　核对基线：上游 dsh **0.2.1-rc.1**（上一版为 0.2.1-alpha.5）
+> 记录时间：2026-10-17　核对基线：上游 dsh **0.2.1-rc.2**（上一版为 0.2.1-rc.1）
 
 ## 1. fork 现状
 
@@ -11,11 +11,11 @@
 |---|---|
 | 远端（本 fork） | `https://github.com/zerowlzf/deepseek-harness` |
 | 上游 | `deepseek-ai/deepseek-harness` |
-| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.1-rc.1**（此前为 0.2.1-alpha.5 → 0.2.0-rc.2 → 0.2.0-rc.1 → 0.1.7-alpha.2） |
+| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.1-rc.2**（此前为 0.2.1-rc.1 → 0.2.1-alpha.5 → 0.2.0-rc.2 → 0.2.0-rc.1 → 0.1.7-alpha.2） |
 
-fork 自有提交（截至 2026-10-17 共 41 个：rc.1 轻量轮随新基线重放 39 个，本轮新增 2 个 —— 计费版本跟随、本文档更新）主要包含：
+fork 自有提交（截至 2026-10-17 共 46 个：rc.2 轻量轮随新基线重放 43 个，本轮新增 3 个 —— WebRuntime 活引用适配、计费版本跟随、本文档更新）主要包含：
 
-- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.1；上游没有该路径，是本地自有包）
+- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.2；上游没有该路径，是本地自有包）
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
 - `session-format` 历史会话兼容补丁（permission/preset 的 origin 成员、subagent/descriptor 版本 2）
 - Windows 子进程窗口隐藏（`windowsHide`：上游自带 `subprocess-local` 等大部分 spawn 点的覆盖且仍在自修，本地补丁只剩它未覆盖的 5 个文件共 7 处 —— `bundle/web-app`、`sdk/client`、`ptc-runtime-python` ×2、`ssh` ×2、`sandbox-local`）
@@ -60,6 +60,8 @@ pnpm install                                       # 只有依赖真的变了才
 0.2.0-rc.2 → 0.2.1-alpha.5（本地 34 个提交、上游 1912 个提交、约 8361 个文件）：冲突集中在几个生成物与既定补丁（slot 目录、slots 文档双语、事件图文档双语、ptc-runtime 的 windowsHide 处），按「生成物重跑、补丁语义不动」处理完毕；18 个带 `--check` 的官方生成器重跑后零差异。跨的基线越大，「生成器全绿」这个信号越重要 —— 它是目录自洽的最快判据。
 
 0.2.1-alpha.5 → 0.2.1-rc.1（本地 39 个提交、上游 4 个提交且全为发布登记：355 个 package.json 各 ±1 行版本号，无代码变更、无变更日志）：rebase 零冲突；lockfile 零变化（翻新全在 workspace 内部版本，不触及依赖图）；计费插件是本地自有包（上游没有该路径），版本跟随单独提交。轻量轮的取舍：生成器 spot check + typecheck + 单包样张 + 直接重建（跳过全量清理与全量 test:gui），依据是「距上次全量清理仅数小时且 src 零字节变化」。
+
+0.2.1-rc.1 → 0.2.1-rc.2（本地 43 个提交、上游 9 个提交，以发布登记与 Web 侧特性为主：约 230 个 package.json ±1 行版本号、DeepSeek Search/Fetch API、标注 1017 徽标）：rebase 零冲突；lockfile 零变化；上游把 WebRuntime 的 provider 选择改为必填的 Volatile 活引用（每次操作经 `.get()` 读当前值），本地宿主样张按文件内既有的 `live()` 模式适配——本轮唯一的类型断点（TS2554），适配后 typecheck 5/5；计费插件版本跟随单独提交。取舍沿用 rc.1 轻量轮，但清理与重建走用户要求的全量路径（见 §7）。
 
 ## 3. 构建前必做：清掉旧基线产物
 
@@ -170,3 +172,13 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 产物核验：`apps/web/dist` 156 个文件；`conversation.chat.turnEndInfo` 双 bundle 在场；`apps/desktop/lib/main.js` 516716 字节（比 alpha.5 轮恰好短 3 字节，即版本串长度差）。
 - 未跑：`test:gui` 全量（rc.1 无功能变更，alpha.5 轮已全量验证过同构产物）、`lint:contracts-ready`（版本串不进 lint 面）、`test:docs`（本轮笔记无变更；文档门禁以 `verify-md-wrap` 与 `verify-repository-references` 复核本文档）。
 - 补丁族复查（同日）：五个补丁族全部在场、均未被上游 rc.1 吸收 —— 计费插件与 turnEndInfo 是自有扩展（上游无此路径）；tool-cordis 重解析、session-format 的 origin 成员与 descriptor v2 归一在上游源码中仍不存在（上游对旧日志的严格拒绝是其既有政策，不是待修缺陷）；windowsHide 上游自带大部分覆盖，本地补丁为它未覆盖的 5 文件 7 处。§1 的 windowsHide 条目已按实际修正。
+
+### 基线 0.2.1-rc.2（2026-10-17 傍晚：轻量同步 + 全量清理重建）
+
+- 触发：上游当日再发 `dsh-v0.2.1-rc.2`（9 个提交：约 230 个 package.json ±1 行版本号、DeepSeek Search/Fetch API、标注 1017 徽标；桌面端仅版本串变化、契约源文件零改动）。
+- rebase：备份 `backup/master-pre-0.2.1-rc.2-20261017` → `git rebase --onto dsh-v0.2.1-rc.2 dsh-v0.2.1-rc.1 master`，43 个本地提交零冲突重放；`pnpm install` 无变化；lockfile 零变化；计费插件版本跟随（本地自有包，上游没有该路径）。
+- 适配（本轮唯一类型断点）：`WebRuntime` 构造签名改为必填的 Volatile 活引用配置（`searchProvider`/`fetchProvider` 每次操作读当前值，设置变更无需重挂服务），`host.host.spec.ts` 按文件内既有的 `live()` 模式传 `undefined`（保持单 stub 自动选择语义）。
+- 门禁：`typecheck` 5/5（host aggregate 71.19 s）；`ui-billing` 173 项全过；`verify-client-catalog` / `verify-config-catalog` / `verify-cordis-catalog` / `verify-official-bundle-catalog` 零漂移；CLI 快探针复跑 `web --help`（`--public-url`/`--tls-cert`/`--tls-key` 在场，`--host`/`--port` 语义未变）。
+- 清理与重建：`pnpm run clean`（361 条路径）→ 手工删 `apps/web/dist`（156 个文件）→ `pnpm run build`：9/9 门禁、191.13 s、327 个客户端产物。构建记录 `DSH_CLIENT_VERSION=0.2.1-rc.2` 且**无 dirty 标记**——先提交后重建，产物出自干净树（alpha.5 / rc.1 轮相反）。
+- 产物核验：`apps/web/dist` 156 个文件；`conversation.chat.turnEndInfo` 双 bundle（`ui-billing/lib/client.js` 与 `ui-chat/lib/client.js` 各 2 处）；`apps/desktop/lib/main.js` 516716 字节（与 rc.1 完全相同：桌面端零改动、版本串同长）；新增 `ui-deepseek-model-label-1017/lib/client.js` 在场（327 = 上轮 325 + 2 个产物）。
+- 未跑（沿用既往原因与取舍）：`test:gui` 全量、`test:docs`（本文档以 `verify-md-wrap` 与 `verify-repository-references` 复核）、`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。
