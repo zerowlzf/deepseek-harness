@@ -32,13 +32,14 @@ fork 自有提交（截至 2026-10-17 共 41 个：rc.1 轻量轮随新基线重
 
 ```sh
 git fetch zerowlzf
-git log --oneline origin/master..zerowlzf/master   # 看 fork 独有提交
+git log --oneline upstream/master..zerowlzf/master   # 看 fork 独有提交
 git cherry zerowlzf/master HEAD                    # 判断本地补丁是否已被远端包含
 git branch backup/<旧分支名>-pre-<新基线> <旧分支>   # 先备份旧分支
 git checkout -B master zerowlzf/master
 git branch --set-upstream-to=zerowlzf/master master
 ```
 
+- **远端名**：官方为 `upstream`（2026-10-17 自 `origin` 更名），fork 为 `zerowlzf`；未更名的 clone 先执行 `git remote rename origin upstream`。
 - **必须给足超时**：跨大基线切换涉及约 2400 个文件改写，默认超时（120s）会被打断，建议 ≥600s。
 - **中断善后**：删 `.git/index.lock`，确认工作区无本地改动后 `git clean -fd` 清掉残留的未跟踪文件，再重试切换。
 - 切换前建议用 `git cherry` / patch-id 逐一核实旧分支上的本地补丁是"已被远端包含"还是"需要保留"，再决定是否整体切换。
@@ -48,7 +49,7 @@ git branch --set-upstream-to=zerowlzf/master master
 本机的 checkout 就是这些补丁的产地，升级走 rebase，每条本地提交的历史都保留：
 
 ```sh
-git fetch origin --tags
+git fetch upstream --tags
 git merge --ff-only fork/master                    # 先并入 fork 端新增的文档提交
 git rebase --onto dsh-v<新版本> dsh-v<旧版本> master
 pnpm install                                       # 只有依赖真的变了才需要
@@ -137,7 +138,7 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 
 ### 本地审阅轮（2026-09-29 晚；基线仍为 dsh-v0.2.0-rc.2，未升级）
 
-- 上游核对：`git fetch origin --tags --prune` 后 `git ls-remote origin refs/heads/master` 与本地 `origin/master` 同为 rc.2 的合并提交（远端领先 0 个），最新发布 tag 仍是 `dsh-v0.2.0-rc.2`；本轮无需 rebase。
+- 上游核对：`git fetch upstream --tags --prune` 后 `git ls-remote upstream refs/heads/master` 与本地 `upstream/master` 同为 rc.2 的合并提交（远端领先 0 个），最新发布 tag 仍是 `dsh-v0.2.0-rc.2`；本轮无需 rebase。
 - 生成物零差异：16 个官方生成器的 `--check` 变体全部退出码 0（`verify-doc-graphs` 需 `--max-old-space-size=8192`），工作区零改动。
 - 本地补丁族 7 → 6：`scripts/clean.ts` 的「已知输出根」补丁退役——上游自 rc.1 起已删除 desktop 键盘测试项目，该 outDir 不在工程引用图里（只读探针遍历 331 个输出根不含它，退回上游原代码遍历依然成功）。该文件现与 `dsh-v0.2.0-rc.2` 逐字节一致。
 - 旧基线残留：`lib/desktop-keyboard-test-types/`（13 个文件，mtime 2026-09-25）手工删除。它原本 `pnpm run clean` 也够不到：遍历基于 tsconfig 引用图，而根级 `.tsbuildinfo` 清理只覆盖仓库根目录下的文件。
