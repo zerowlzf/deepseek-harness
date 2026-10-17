@@ -3,7 +3,7 @@
 > 本文由本 fork 维护者添加，只描述 **zerowlzf/deepseek-harness** 这个 fork 的同步与构建注意事项。
 > 它不是上游文档、不描述上游代码，也不改动任何上游文件。
 >
-> 记录时间：2026-09-29　核对基线：上游 dsh **0.2.0-rc.2**（上一版为 0.2.0-rc.1）
+> 记录时间：2026-10-17　核对基线：上游 dsh **0.2.1-alpha.5**（上一版为 0.2.0-rc.2）
 
 ## 1. fork 现状
 
@@ -11,11 +11,11 @@
 |---|---|
 | 远端（本 fork） | `https://github.com/zerowlzf/deepseek-harness` |
 | 上游 | `deepseek-ai/deepseek-harness` |
-| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.0-rc.2**（此前为 0.2.0-rc.1，再往前为 0.1.7-alpha.2） |
+| `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.1-alpha.5**（此前为 0.2.0-rc.2 → 0.2.0-rc.1 → 0.1.7-alpha.2） |
 
-fork 自有提交（截至 2026-09-29 共 21 个：随新基线重放 18 个，本轮新增 3 个 —— 版本跟随、本文档更新与补录）主要包含：
+fork 自有提交（截至 2026-10-17 共 39 个：随新基线重放 34 个，本轮新增 5 个 —— 计费适配（含版本跟随与夹具断言清理）、tool-cordis 类型收紧、生成物重跑、说明链接与配对、本文档更新）主要包含：
 
-- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随 0.2.0-rc.1 / 0.2.0-rc.2 基线
+- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-alpha.5）
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
 - `session-format` 历史会话兼容补丁（permission/preset 的 origin 成员、subagent/descriptor 版本 2）
 - Windows 子进程窗口隐藏（`windowsHide`，上游已覆盖 `win32-process`，本地只剩 `bundle/web-app` 与 `sdk/client` 两处 spawn）
@@ -56,12 +56,15 @@ pnpm install                                       # 只有依赖真的变了才
 
 实测 0.2.0-rc.1 → 0.2.0-rc.2（本地 18 个提交、上游 1022 个文件）：rebase 零冲突；`pnpm install` 14.8 s 完成；16 个官方生成器重跑后与工作区零差异，说明 rebase 后目录已自洽。rebase 之后本地提交都是新哈希，推送仍需 `--force-with-lease`。
 
+0.2.0-rc.2 → 0.2.1-alpha.5（本地 34 个提交、上游 1912 个提交、约 8361 个文件）：冲突集中在几个生成物与既定补丁（slot 目录、slots 文档双语、事件图文档双语、ptc-runtime 的 windowsHide 处），按「生成物重跑、补丁语义不动」处理完毕；18 个带 `--check` 的官方生成器重跑后零差异。跨的基线越大，「生成器全绿」这个信号越重要 —— 它是目录自洽的最快判据。
+
 ## 3. 构建前必做：清掉旧基线产物
 
 - `lib/`、`apps/web/dist` 等构建产物都在 `.gitignore` 里（且不被 git 跟踪），所以 `git clean` 清不掉、`checkout` 也不会覆盖 —— 跨基线切换后必然残留上一个基线的产物（实测 `packages/client/ui-billing/lib` 就残留过旧基线产物）。
 - 官方 `npm run clean` 只清 TypeScript 的 outDir / 已知输出根，**不包含 Vite 的 `apps/web/dist`**，需手工删除。
+- 官方 clean 还有两类盲区（0.2.1-alpha.5 轮实测）：`coverage/`（Vitest 覆盖率产物）与 `website/.generated/`（VitePress 站点生成物）同样不在清理范围，构建前一并手工删除。
 - 还有一类它够不到的残留：曾经由某个 tsconfig 产出、但该工程后来被上游删掉的根级输出（实测 `lib/desktop-keyboard-test-types`，0.1.7 基线的 desktop 键盘测试工程所出）。遍历基于 tsconfig 引用图，工程没了就永不入列，只能手工删。
-- 建议顺序：`npm run clean` → 手工清理残留 `dist`（与本条上一行点名的根级输出）→ 全量构建。
+- 建议顺序：`npm run clean` → 手工清理残留 `dist` / `coverage` / `website/.generated`（与本条上一行点名的根级输出）→ 全量构建。
 
 ## 4. 坑一：pnpm 11 "跳装" 导致依赖链接残缺
 
@@ -100,6 +103,13 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - `wmic.exe` 在受管环境被程序黑名单硬拦截（构建过程中会出现，本次未影响构建结果）。
 - 构建产物检查点：`apps/web/dist`（前端静态资源）、`apps/desktop/lib/main.js`、各包 `lib/`。
 - 定向测试：`npx vitest run <目录或文件>`。本次变更区域实测：`session-format` 634 个用例全通过、`ui-billing` 169 个用例全通过。
+- 上游 `python/sdk/uv.lock` 里有一行 `size =` 的值是纯十六进制数字串，与上游一个**已发布提交**的前缀同形（该提交自 dsh-v0.2.1-alpha.3 起在发布历史里）：全历史克隆下 `verify-repository-references` 会把它误报成提交哈希引用。上游 CI 用浅克隆（脚本注释本身也说明「浅历史对象无法匹配」），所以上游不受影响。既不该改这个上游锁文件，也不该改上游脚本 —— 本机 `test:docs` 因此固定红这一项，见到即忽略；上游改掉这个 pin 后误报会自行消失。
+- oxlint 1.81（随上游基线升级）对上游文件 `packages/experimental/client-ui-cot-translation/src/index.ts` 的 `oxlint-disable` 注释报 unused-disable 警告：只警告、不阻断（`lint:contracts-ready` 退出码 0）。这是上游自身的漂移，不要为它新增 fork 补丁。
+- Windows 无符号链接权限时，上游新加的「拒绝最终符号链接」样张（`packages/client/ui-deliverables/tests/present-open.host.spec.ts`）会以 EPERM 失败：本机环境限制，与 fork 无关，勿改上游测试。
+- `test:gui` 里的 `document-preview-license-bundle.client.spec.ts` 检查的是**已构建**的 `lib/` 打包内容：跨基线后必须先全量构建再跑它，否则拿旧产物会误报（0.2.1-alpha.5 轮实测：旧产物缺新的 frontmatter-fields 分块）。
+- 本仓库有 14 条 git 符号链接条目（mode 120000）。Windows 上 `core.symlinks=false` 会把它们落成普通文本文件，且本机无创建符号链接的权限（实测 `symlinkSync` 报 EPERM）。两个官方检查因此固定红：`verify-cordis-config`（读 `apps/cli/tests/profiles/acp/cordis.yml` 时报「root must be a Loader entry array」）与 `verify-node-next-types`（脚本自己要建符号链接；它只回传子进程输出，失败时表现为空输出）。有符号链接权限的环境不受影响；不要为它们打 fork 补丁。
+- `rescope-vendor:check` 首次运行报 19 个文件残留，逐项核对**全部是上游自身的内容**：18 个文件与 `dsh-v0.2.1-alpha.5` 逐字节一致；剩下 `packages/bundle/web-app/cordis.patch.yml` 虽被 fork 修改过，命中的却是上游注释里一个反引号包裹的旧包名，fork 的新增行不含任何待改写记号。不要动上游文件，也不要改 rescope 脚本或映射表。
+- `hygiene` 是全仓库巡检：首次运行（0.2.1-alpha.5 轮）即翻出 8 处测试夹具里的 `as unknown`（fork 自有、在基线之外，已按 no-unknown-casts 规则修复）。以后每轮同步至少跑一次 `pnpm run hygiene`，尽早发现 fork 自身的门禁欠账，别等 CI。
 
 ## 7. 验证记录
 
@@ -134,3 +144,14 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 本文档此前让 `test:docs` 红在 `verify-repository-references`：文中两处抄了提交哈希，其中一处会随强推失效。现改为引用发布 tag 与字段名，该门禁已转绿。
 - 仍未跑：`test:snapshot`（Windows 不可用，原因见上）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。
 - 与用户环境相关的一条：`llm-pi-ai` 的 `src/config.ts` 在 rc.1 → rc.2 之间**未改动**，因此 profile patch 里自定义 provider / 模型 / compat 声明仍然有效；上游内置目录删掉的旧模型 ID 不影响自定义模型。
+
+### 基线 0.2.1-alpha.5（2026-10-17，Windows + pwsh 7 + node 24）
+
+- 升级路径：备份旧 `master` → `git rebase --onto dsh-v0.2.1-alpha.5 dsh-v0.2.0-rc.2 master`，34 个本地提交全部重放（冲突处置见 §2）。上游新增的访问席位（access seats）在本地夹具里以既有的 `as never` 模式补桩。
+- 门禁：`typecheck` 5/5；`lint:contracts-ready` 0 警告（唯一提示是 §6 所述上游 unused-disable）；`test:docs` 21 项 20 过（唯一失败为 §6 所述 uv.lock 误报）；定向 vitest 1637 项 1636 过（1 项 5 s 负载抖动，单跑通过）；`ui-billing` 173 项全过。
+- hygiene（首跑）：21 项 18 过 3 红，正是 §6 记载的 2 项 Windows 符号链接与 1 项上游 rescope 残留；fork 自身的 `verify-no-unknown-casts` 8 处已改为真实类型，复跑该门禁 PASS。
+- 清理与重建：`pnpm run clean`（372 条路径）→ 手工删 `apps/web/dist`、`coverage/`（1935 个文件）、`website/.generated/`（192 个文件）→ `pnpm run build`：9/9 门禁、208.99 s。构建记录 `DSH_CLIENT_VERSION=0.2.1-alpha.5`、325 个客户端产物。
+- 产物核验：`apps/web/dist` 156 个文件；`ui-billing/lib/client.js` 与 `ui-chat/lib/client.js` 里都能搜到 `conversation.chat.turnEndInfo`；`apps/desktop/lib/main.js` 约 505 KB。
+- `test:gui`（基于新产物）：647 个文件、10902 项中仅 1 文件 1 项失败 —— `present-open.host.spec.ts` 的符号链接 EPERM（§6 环境限制）；§6 最后一条所述 `document-preview-license-bundle` 样张在新产物上通过。
+- 会话恢复扫描（用本轮构建的 catalog）：`~/.dsh/sessions` 53 个工件 51 恢复 2 拒绝（均为 v3 中断录制中的未闭合 tool call，命中上游既有校验，与 fork 无关）；分布 v0=25、v2=11、v3=15、v4=2。
+- 未跑（沿用上一节原因）：`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器缓存）。
