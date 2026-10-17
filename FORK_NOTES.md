@@ -15,7 +15,7 @@
 
 fork 自有提交（截至 2026-10-17 共 46 个：rc.2 轻量轮随新基线重放 43 个，本轮新增 3 个 —— WebRuntime 活引用适配、计费版本跟随、本文档更新）主要包含：
 
-- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.2；上游没有该路径，是本地自有包）
+- 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 四个落点：Plugins 页行配置、composer 胶囊、`turnEndInfo` 逐轮读数、turnTail 同行读数）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.2；上游没有该路径，是本地自有包）
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
 - `session-format` 历史会话兼容补丁（permission/preset 的 origin 成员、subagent/descriptor 版本 2）
 - Windows 子进程窗口隐藏（`windowsHide`：上游自带 `subprocess-local` 等大部分 spawn 点的覆盖且仍在自修，本地补丁只剩它未覆盖的 5 个文件共 7 处 —— `bundle/web-app`、`sdk/client`、`ptc-runtime-python` ×2、`ssh` ×2、`sandbox-local`）
@@ -107,7 +107,7 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 
 - `wmic.exe` 在受管环境被程序黑名单硬拦截（构建过程中会出现，本次未影响构建结果）。
 - 构建产物检查点：`apps/web/dist`（前端静态资源）、`apps/desktop/lib/main.js`、各包 `lib/`。
-- 定向测试：`npx vitest run <目录或文件>`。本次变更区域实测：`session-format` 634 个用例全通过、`ui-billing` 169 个用例全通过。
+- 定向测试：`npx vitest run <目录或文件>`。本次变更区域实测：`session-format` 634 个用例全通过、`ui-billing` 173 个用例全通过。
 - 上游 `python/sdk/uv.lock` 里有一行 `size =` 的值是纯十六进制数字串，与上游一个**已发布提交**的前缀同形（该提交自 dsh-v0.2.1-alpha.3 起在发布历史里）：全历史克隆下 `verify-repository-references` 会把它误报成提交哈希引用。上游 CI 用浅克隆（脚本注释本身也说明「浅历史对象无法匹配」），所以上游不受影响。既不该改这个上游锁文件，也不该改上游脚本 —— 本机 `test:docs` 因此固定红这一项，见到即忽略；上游改掉这个 pin 后误报会自行消失。
 - oxlint 1.81（随上游基线升级）对上游文件 `packages/experimental/client-ui-cot-translation/src/index.ts` 的 `oxlint-disable` 注释报 unused-disable 警告：只警告、不阻断（`lint:contracts-ready` 退出码 0）。这是上游自身的漂移，不要为它新增 fork 补丁。
 - Windows 无符号链接权限时，上游新加的「拒绝最终符号链接」样张（`packages/client/ui-deliverables/tests/present-open.host.spec.ts`）会以 EPERM 失败：本机环境限制，与 fork 无关，勿改上游测试。
@@ -182,3 +182,17 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 清理与重建：`pnpm run clean`（361 条路径）→ 手工删 `apps/web/dist`（156 个文件）→ `pnpm run build`：9/9 门禁、191.13 s、327 个客户端产物。构建记录 `DSH_CLIENT_VERSION=0.2.1-rc.2` 且**无 dirty 标记**——先提交后重建，产物出自干净树（alpha.5 / rc.1 轮相反）。
 - 产物核验：`apps/web/dist` 156 个文件；`conversation.chat.turnEndInfo` 双 bundle（`ui-billing/lib/client.js` 与 `ui-chat/lib/client.js` 各 2 处）；`apps/desktop/lib/main.js` 516716 字节（与 rc.1 完全相同：桌面端零改动、版本串同长）；新增 `ui-deepseek-model-label-1017/lib/client.js` 在场（327 = 上轮 325 + 2 个产物）。
 - 未跑（沿用既往原因与取舍）：`test:gui` 全量、`test:docs`（本文档以 `verify-md-wrap` 与 `verify-repository-references` 复核）、`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。
+
+### 基线 0.2.1-rc.2（2026-10-17 夜，本机复核轮：fork 远端重写后的全链验证）
+
+- 触发：另一台电脑把 fork `master` 重写到 rc.2 基线加 46 个本地提交（远端与上一节的 `dsh-v0.2.1-rc.2` 已合流，tip 已不在本机旧 `master` 的链条上）。本机核对 34 个旧本地提交全部在场（28 个 patch-id 相等；6 个形态不同但逐项验证：win 补丁同 3 文件、`windowsHide` 7 处 5 文件全在、ui-billing `src/` 除 tests/package.json/tsdown 外逐字节相同、catalog 属生成物），确认零丢失后把本机 `master` 切到远端 tip（旧 tip 存 `backup/master-pre-0.2.1-rc.2`），未做 merge。
+- 门禁：`typecheck` 5/5（54.54 s）；目标 vitest（ui-billing / ui-chat / tool-cordis / session / sdk / bundle-web-app）186 文件 3847 项通过、10 跳过（首轮与全量生成物检查并行、机器满载时 1 项 5 s 超时，单独重跑该文件 188/188 通过，判定为争用抖动）。
+- 生成物 `--check`：client / config / session-format / cordis-inspect / cordis（125 文件） / tsconfig-paths / dependency / plugin-packages 全部零漂移；`verify-doc-graphs` 7 张（8 GB 堆）；`verify-persistence-formats` v0–v4 通过；`verify-md-wrap` 2052 文件；`verify-package-readme-model-experience` 343 README 全过。
+- `verify-client-domain-graph` 报 87 处告警：在临时 worktree 对上游 `dsh-v0.2.1-rc.2` 跑同一脚本，得到逐项相同的 87 处 → 上游既有红，fork 零新增（唯一涉及 ui-chat 的一处 `contract/ → chat/flow-motion` 上游同样存在）。
+- 清理与重建：`pnpm run clean`（334 路径）→ 手工删 residue → `pnpm run build`：9/9 门禁、398.09 s、327 个客户端产物；记录 `DSH_CLIENT_VERSION=0.2.1-rc.2`，`DSH_CLIENT_COMMIT_HASH` 前缀与本机 tip 一致。
+- 产物核验：`apps/web/dist` 156 文件；`ui-billing/lib/client.js` 与 `ui-chat/lib/client.js` 各 2 处 `turnEndInfo`；`apps/desktop/lib/main.js` 516716 字节；`ui-deepseek-model-label-1017/lib/client.js` 在场。
+- 会话恢复扫描（本轮构建的 catalog）：`~/.dsh/sessions` 96 个工件 96 恢复、0 拒绝（v0=37、v2=26、v3=20、v4=13）。
+- 源码重启 + 产品面探针：boot 70 条目、billing 行在 boot 中（inject=10）；`session/list` 200、80 项、15 个根会话；v0–v4 根/子会话若干例历史读取全过（v0 首条为 `permission/preset`，即 fork 的 origin 补丁在真实读取路径上生效）；census 无孤儿（3 个归档候选）；无头 Edge 探针：composer 胶囊 `¥156.31 ¥9.99`、`本会话 ¥156.31`、`DeepSeek 账户余额 ¥9.99`、turn 读数落点 2 处、页面零异常零 console 错误。两个探针的 token 改为 argv 优先（源码模式下与 launcher settings 的 token 不同）。
+- 周边仓库：启动器 `test-race.js` 20 通过、`test-webview.js` 7 通过（本机实测），已在 `ff36264` 与远端同步；ui-billing 独立仓 `sync.mjs` 同步到 rc.2（含 `host.host.spec.ts` 的 WebRuntime 活引用适配）、`--check` 零漂移、CONTRIBUTING 基线句更新，提交 `6977216` + tag `v0.2.1-rc.2`。
+- 补丁族复核与修正（本轮末，逐族 + 上游对照）：计费接线、`turnEndInfo`+`providerMetadata`、session-format origin/descriptor、windowsHide、生成物与中英对称均成立；上游 rc.2 未静默抵消任何补丁族；v1 文件里的 descriptor v2 目前没有写入者（记录在案）。据此修正四处：① `tool-cordis` 再解析按 `list()` 发布的 `inputSchema` 判定，声明 string 输入的方法收到的 JSON 形文本不再被再解析（README 与注释同步收紧，新增钉住测试；该族定向 802 项全过，含四代 session 迁移）；② v1→v2 补 `permission/preset` 保留链测试（防未来迁移重声明处置表时丢掉 v0 处置表的 spread）；③ `migration.ts` 的 v2→3 注释收窄到「released v0 构建至 0.1.1-rc.2 写出 v2」这一已验证范围；④ 文档勘误：用例数 169→173、计费插件改述为四个落点、client 组 README 补 `ui-billing` 行（中英）。
+- 未跑（沿用既往取舍）：`test:gui` 全量、`test:docs` 全量（本文档以 `verify-md-wrap` 复核）、`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。
