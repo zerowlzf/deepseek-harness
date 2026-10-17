@@ -18,7 +18,7 @@ fork 自有提交（截至 2026-10-17 共 41 个：rc.1 轻量轮随新基线重
 - 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 双胶囊）的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.1；上游没有该路径，是本地自有包）
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
 - `session-format` 历史会话兼容补丁（permission/preset 的 origin 成员、subagent/descriptor 版本 2）
-- Windows 子进程窗口隐藏（`windowsHide`，上游已覆盖 `win32-process`，本地只剩 `bundle/web-app` 与 `sdk/client` 两处 spawn）
+- Windows 子进程窗口隐藏（`windowsHide`：上游自带 `subprocess-local` 等大部分 spawn 点的覆盖且仍在自修，本地补丁只剩它未覆盖的 5 个文件共 7 处 —— `bundle/web-app`、`sdk/client`、`ptc-runtime-python` ×2、`ssh` ×2、`sandbox-local`）
 - `tool-cordis` 输入被字符串化时的重解析防御
 
 ### ⚠️ master 会被强推重写
@@ -168,3 +168,4 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 重建：直接 `pnpm run build`（未重跑 clean 与手工清理 —— 距当日上午的全量清理仅数小时，且此后 src 零字节变化，只有测试夹具、文档与版本串改动）：9/9 门禁、58.27 s（缓存热）、325 个客户端产物。构建记录 `DSH_CLIENT_VERSION=0.2.1-rc.1`、`DSH_CLIENT_GIT_DIRTY=true`（构建在提交前进行，与 alpha.5 轮同理）。
 - 产物核验：`apps/web/dist` 156 个文件；`conversation.chat.turnEndInfo` 双 bundle 在场；`apps/desktop/lib/main.js` 516716 字节（比 alpha.5 轮恰好短 3 字节，即版本串长度差）。
 - 未跑：`test:gui` 全量（rc.1 无功能变更，alpha.5 轮已全量验证过同构产物）、`lint:contracts-ready`（版本串不进 lint 面）、`test:docs`（本轮笔记无变更；文档门禁以 `verify-md-wrap` 与 `verify-repository-references` 复核本文档）。
+- 补丁族复查（同日）：五个补丁族全部在场、均未被上游 rc.1 吸收 —— 计费插件与 turnEndInfo 是自有扩展（上游无此路径）；tool-cordis 重解析、session-format 的 origin 成员与 descriptor v2 归一在上游源码中仍不存在（上游对旧日志的严格拒绝是其既有政策，不是待修缺陷）；windowsHide 上游自带大部分覆盖，本地补丁为它未覆盖的 5 文件 7 处。§1 的 windowsHide 条目已按实际修正。
