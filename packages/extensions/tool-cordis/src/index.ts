@@ -67,7 +67,7 @@ export function apply(ctx: Context): void {
       let input = args.input
       if (typeof input === 'string') {
         try {
-          const reparsed = JSON.parse(input) as typeof input
+          const reparsed = JSON.parse(input) as JsonValue
           if (reparsed !== null && typeof reparsed === 'object') input = reparsed
         } catch {
           /* fall through to provider validation */
