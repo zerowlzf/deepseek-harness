@@ -305,7 +305,7 @@ describe('configuration', () => {
     // The empty object is what a deployment that sets nothing resolves from;
     // the schema fills every key, which is the fact under test. Ordinary keys
     // resolve to plain values and live ones to a reference read on demand.
-    const resolved = configSchema({}) as unknown as PluginConfig
+    const resolved = configSchema({})
     expect({
       apiKeyEnv: resolved.apiKeyEnv,
       baseURL: resolved.baseURL,

@@ -19,13 +19,13 @@ import {
   makeTranslate, stubConfigForm, TestRemote, type StubConfigForm,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import { DEFAULT_CURRENCY, NS, type BillingSettings } from '../src/settings.ts'
 import { providerRoutes, type ProviderRouteGroup } from '../src/client/routes.ts'
 import { SessionCostMeter, freshness, groupSteps } from '../src/client/CostMeter.tsx'
 import { TurnCostMeter, TurnCostMeterTail, attemptsOf } from '../src/client/TurnCostMeter.tsx'
-import { BillingPage, type BillingPageProps } from '../src/client/BillingPage.tsx'
+import { BillingPage } from '../src/client/BillingPage.tsx'
 import type { BillingPageInjected, BillingPillsInjected } from '../src/client/face.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { rateOps } from '../src/client/rate-ops.ts'
@@ -62,7 +62,6 @@ function snapshot(partial: SnapshotParts = {}): ConfigFormSnapshot<BillingSettin
     user: undefined,
     revision: 1,
     writable: true,
-    mode: 'host',
     ...rest,
   }
 }
@@ -90,14 +89,7 @@ function billingFace(stub: StubConfigForm<BillingSettings>, ctx?: Context) {
       useSyncExternalStore(subscribeGroups, () => selector(groups.getSnapshot()))) as never,
     routeGroups: async () => {
       if (ctx === undefined) return
-      const describe = (ctx as unknown as {
-        configForms: {
-          describe(): {
-            ensure(): Promise<void>
-            getSnapshot(): { view?: { namespaces: readonly { ns: string; value: unknown; user?: unknown }[] } }
-          }
-        }
-      }).configForms.describe()
+      const describe = ctx.configForms.describe()
       const [registered, directory] = await Promise.all([
         ctx.remote.llm.listProviders(),
         ctx.remote.llm.listConfigurableProviders(),
@@ -130,18 +122,36 @@ function billingFace(stub: StubConfigForm<BillingSettings>, ctx?: Context) {
 function renderPage(
   stub: StubConfigForm<BillingSettings>,
   face: ReturnType<typeof billingFace>,
-): { mutate: ReturnType<typeof vi.fn> } {
-  const mutate = vi.fn(async () => true) as unknown as ReturnType<typeof vi.fn>
+): { mutate: ReturnType<typeof vi.fn<ConfigForm<Record<string, unknown>>['mutate']>> } {
+  const mutate = vi.fn<ConfigForm<Record<string, unknown>>['mutate']>(async () => true)
   function Harness() {
-    const state = useSyncExternalStore(
+    const stored = useSyncExternalStore(
       (notify: () => void) => stub.scope.subscribe(notify),
       () => stub.scope.getSnapshot(),
-    ) as unknown as ConfigFormSnapshot<Record<string, unknown>>
+    )
+    // The Plugins page runtime declares the entry form over the namespace
+    // generic, so the snapshot widens field by field instead of by assertion.
+    const state: ConfigFormSnapshot<Record<string, unknown>> = {
+      status: stored.status,
+      value: stored.value === undefined ? undefined : {
+        currency: stored.value.currency,
+        models: stored.value.models,
+        cache: stored.value.cache,
+        cacheError: stored.value.cacheError,
+        official: stored.value.official,
+        officialError: stored.value.officialError,
+        officialRequest: stored.value.officialRequest,
+      },
+      base: stored.base,
+      user: stored.user,
+      revision: stored.revision,
+      writable: stored.writable,
+    }
     return (
       <BillingPage
         {...seats()}
         view="page"
-        form={{ state, mutate: mutate as unknown as NonNullable<BillingPageProps['form']>['mutate'] }}
+        form={{ state, mutate }}
         useBillingGroups={face.useBillingGroups}
         routeGroups={face.routeGroups}
         t={t}
@@ -177,6 +187,10 @@ function seats() {
     close: (() => {}) as never,
     useSessionStatus: (() => undefined) as never,
     useSessionRetainInfo: (() => undefined) as never,
+    useAccess: (() => undefined) as never,
+    useRemoteAccess: (() => undefined) as never,
+    useSessionAccess: (() => undefined) as never,
+    useWorkspaceAccess: (() => undefined) as never,
   }
 }
 
@@ -551,7 +565,7 @@ describe('reactive namespace read', () => {
 })
 
 describe('turn cost row', () => {
-  const nodes = [
+  const nodes: readonly ChatConversationViewNode[] = [
     {
       key: 'turn-tail', kind: 'turn-tail', target: 'chat', anchorSeq: 3, location: { kind: 'session' },
       visibility: 'visible', id: 'turn-tail',
@@ -625,7 +639,7 @@ describe('turn cost row', () => {
         },
       },
     },
-  ] as unknown as readonly ChatConversationViewNode[]
+  ]
 
   function useChat<T>(select: (snapshot: { nodes: { values(): readonly ChatConversationViewNode[] } }) => T): T {
     return select({ nodes: { values: () => nodes } })
@@ -636,7 +650,7 @@ describe('turn cost row', () => {
     return {
       key: id, kind, target: 'chat', anchorSeq: 1, location: { kind: 'session' },
       visibility: 'visible', id, data,
-    } as unknown as ChatConversationViewNode
+    }
   }
 
   /** A Chat selector over one node list. */
@@ -799,7 +813,7 @@ describe('turn cost row', () => {
         cacheError: null,
       },
     }))
-    const unattributed = [
+    const unattributed: readonly ChatConversationViewNode[] = [
       {
         key: 'turn-tail', kind: 'turn-tail', target: 'chat', anchorSeq: 3, location: { kind: 'session' },
         visibility: 'visible', id: 'turn-tail',
@@ -812,7 +826,7 @@ describe('turn cost row', () => {
           },
         },
       },
-    ] as unknown as readonly ChatConversationViewNode[]
+    ]
     const nodes = (select: (snapshot: { nodes: { values(): readonly ChatConversationViewNode[] } }) => unknown) =>
       select({ nodes: { values: () => unattributed } })
     render(
@@ -1598,7 +1612,7 @@ describe('settings page', () => {
     fireEvent.click(screen.getAllByText('Clear')[1] as HTMLElement)
     fireEvent.click(screen.getByText('Save'))
     await act(async () => { await Promise.resolve() })
-    const [ops] = mutate.mock.calls.at(-1) as [{ op: string; path: readonly string[] }[]]
+    const [ops = []] = mutate.mock.calls.at(-1) ?? []
     expect(ops).toHaveLength(2)
     for (const op of ops) {
       expect(op.op).toBe('unset')
