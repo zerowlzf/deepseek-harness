@@ -197,3 +197,13 @@ CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build
 - 补丁族复核与修正（本轮末，逐族 + 上游对照）：计费接线、`turnEndInfo`+`providerMetadata`、session-format origin/descriptor、windowsHide、生成物与中英对称均成立；上游 rc.2 未静默抵消任何补丁族；v1 文件里的 descriptor v2 目前没有写入者（记录在案）。据此修正四处：① `tool-cordis` 再解析按 `list()` 发布的 `inputSchema` 判定，声明 string 输入的方法收到的 JSON 形文本不再被再解析（README 与注释同步收紧，新增钉住测试；该族定向 802 项全过，含四代 session 迁移）；② v1→v2 补 `permission/preset` 保留链测试（防未来迁移重声明处置表时丢掉 v0 处置表的 spread）；③ `migration.ts` 的 v2→3 注释收窄到「released v0 构建至 0.1.1-rc.2 写出 v2」这一已验证范围；④ 文档勘误：用例数 169→173、计费插件改述为四个落点、client 组 README 补 `ui-billing` 行（中英）。
 - 补漏门禁与重清（同夜续）：复核轮初查漏跑 `verify-translation-pairing`，补跑发现 2 对失配（`tool-cordis/README` 仅英文侧随 ① 更新、`client/README` 双侧补行未重录）——中文侧随动、两对 `--write` 重录后，范围检查与全量语料复跑全绿；另按官方 `clean`（361 路径）+ 手工残留（`apps/web/dist` 156 文件、空根级 `lib/`）重清，健康复扫 0 残留后全量重建（9/9 门禁、327 产物），运行时探针（check-runtime 与无头 Edge 计费探针）复跑全绿。
 - 未跑（沿用既往取舍）：`test:gui` 全量、`test:docs` 全量（本文档以 `verify-md-wrap` 复核）、`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。
+
+### 基线 0.2.1-rc.2（2026-10-18：包 README 精简轮 + 细节文档配对）
+
+- 触发：用户要求把计费插件展示用 README（中英各 190 行）精简；长文整体移入新文档，不删除任何记录。
+- 结构：主 README 保留全部门禁下限——`## Summary`（≤100 词）、`## Table of Contents`、`## Model Experience` + `#### KV Cache effect`、`## Known Limitations and Deferred Work`（5 条顶层 bullet + 指向细节文档）、`### Dev Note` 骨架（`doc-standard.spec.ts` 强制 Summary / 目录 / 开发备注）与运行时不变式；Model Experience 与 Known Limitations 保持最后两个 H2。
+- 细节文档：单价模型与编辑规则、费用折叠、注册清单、全部 12 条限制、开发备注全文移入 `packages/client/ui-billing/docs/README.md`（160 行）与 `docs/README.zh.md`。机制：`verify-translation-pairing` 只归一化翻译配对源（README 家族）的 `.zh.md` 链接，故细节文档必须以 `docs/README.md` 配对形式存在，主 README 链接 `docs/README.md` / `docs/README.zh.md` 才能配对；两对 i18n 记录重录，全量语料 1016→1017 对。
+- 门禁：`test:docs`（doc-quick，21 门）20/21——唯一失败为已知 `verify-repository-references`（`python/sdk/uv.lock:113` 误报，非回归）；其中 `documentation standard tests` 22/22（首轮曾报缺 Table of Contents / Dev Note，补齐骨架后过）、`verify-translation-pairing` 范围 + 全量全绿、`verify-package-readme-summaries` 396、`verify-package-readme-model-experience` 343、`verify-package-readme-limitations` 343、`verify-md-wrap` 2052、`verify-md-links` 2012（`docs/README*` 迁移后相对链接已按新深度重指向）。
+- 行数：`README.md` / `README.zh.md` 190 → 59 行；新增 `docs/README.md` / `docs/README.zh.md` 各 160 行。
+- 周边仓库（同轮，已推送）：standalone `dsh-ui-billing` `d5c4b0e`（README 对随精简、`sync.mjs` 的 `PACKAGE_PATHS` 纳入 `docs`、CONTRIBUTING 路径清单更新；`--from-dsh` 后 `--check` 零漂移）；启动器 `dsh-launcher` `e92f7a5`（README 168 → 62 行，长文移入 `docs/maintenance.md` 137 行：与官方桌面端的关系、全部基线吸收记录、上游契约全文、功能 / 配置 / 日志 / 图标细节）。
+- 未跑（沿用取舍）：`test:gui` 全量、`doc-sync` 全量、`test:snapshot`（Windows 不可用）、`DSH_SNAPSHOT=replay pnpm run test:web`（缺 Playwright 浏览器）。
