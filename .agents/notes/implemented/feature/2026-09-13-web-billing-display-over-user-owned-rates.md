@@ -90,4 +90,4 @@ The configuration entry and the plugin's copy dictionary are named apart (`ui-bi
 
 - [ui-billing package](../../../../packages/client/ui-billing/README.md) — the package's own contract, its settings value, and its cost folds.
 - [Session projections](../../../../docs/subsystems/session-projection.md) — the `tokenUsage` value the session fold accumulates.
-- [Web client architecture](../architecture/2026-07-19-gui-web-client-architecture.md) — how a browser plugin row registers slots.
+- [Web client architecture](../../../../docs/subsystems/web-client.md) — how a browser plugin row registers slots.

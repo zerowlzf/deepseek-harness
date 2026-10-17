@@ -90,4 +90,4 @@ Web 图形界面报告了会话消耗了什么，却没有报告它花了多少�
 
 - [ui-billing package](../../../../packages/client/ui-billing/README.zh.md) — 本包自身的约定、它的 settings 值与费用折叠。
 - [Session projections](../../../../docs/subsystems/session-projection.zh.md) — 会话折叠所累积的 `tokenUsage` 值。
-- [Web client architecture](../architecture/2026-07-19-gui-web-client-architecture.zh.md) — 浏览器插件行如何注册 slot。
+- [Web client architecture](../../../../docs/subsystems/web-client.zh.md) — 浏览器插件行如何注册 slot。
