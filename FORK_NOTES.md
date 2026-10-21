@@ -13,7 +13,7 @@
 | 上游 | `deepseek-ai/deepseek-harness` |
 | `master` | 上游基线 + fork 自有提交，当前基线 **dsh 0.2.1-rc.2**（此前为 0.2.1-rc.1 → 0.2.1-alpha.5 → 0.2.0-rc.2 → 0.2.0-rc.1 → 0.1.7-alpha.2） |
 
-fork 自有提交（截至 2026-10-17 共 50 个：rc.2 轻量轮随新基线重放 43 个；rc.2 同步轮新增 3 个 —— WebRuntime 活引用适配、计费版本跟随、本记录更新；复核轮再新增 4 个 —— tool-cordis 再解析收紧、v1→v2 保留链测试、本记录勘误、配对重录与遗漏门禁补查）主要包含：
+fork 自有提交（截至 2026-10-18 共 52 个：rc.2 轻量轮随新基线重放 43 个；rc.2 同步轮新增 3 个 —— WebRuntime 活引用适配、计费版本跟随、本记录更新；复核轮再新增 4 个 —— tool-cordis 再解析收紧、v1→v2 保留链测试、本记录勘误、配对重录与遗漏门禁补查；评审修整轮再新增 2 个 —— 计费包 README 精简并移入 docs/README 配对、评审修整（去重、锚点归一、补 ToC、`files` 纳入 docs））主要包含：
 
 - 计费插件 `packages/client/ui-billing`（账户余额 + 会话费用，Web UI 四个落点：Plugins 页行配置、composer 胶囊、`turnEndInfo` 每轮读数、`turnTail` 兜底读数（没有操作行的轮次））的完整移植史：0.1.7-alpha.2 适配 → 迁到 Plugins 页行配置 → 两轮自审修正 → 跟随各发布基线（最新 0.2.1-rc.2；上游没有该路径，是本地自有包）
 - `ui-chat` 的 `conversation.chat.turnEndInfo` 插槽（计费读数落在已完成 Turn 操作行里的落点：随包 usage 触发器之后、时钟之前）
